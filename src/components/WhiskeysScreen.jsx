@@ -1,0 +1,79 @@
+import { useState } from 'react'
+import { useClubData } from '../context/DataContext'
+import { ConfirmDialog } from './ConfirmDialog'
+import { listAllRanges } from '../domain/clubRules'
+
+export function WhiskeysScreen() {
+  const { state, renameWhiskeySlot } = useClubData()
+  const [editingSlot, setEditingSlot] = useState(null)
+  const [draftName, setDraftName] = useState('')
+  const [pendingChange, setPendingChange] = useState(null)
+
+  const slotsByNumber = new Map(state.whiskeySlots.map((s) => [s.number, s]))
+  const ranges = listAllRanges()
+
+  function startEditing(slot) {
+    setEditingSlot(slot.number)
+    setDraftName(slot.name || '')
+  }
+
+  function requestSave(slot) {
+    setPendingChange({ slot, newName: draftName.trim() })
+  }
+
+  return (
+    <div className="admin-screen">
+      <h2>Whiskeys</h2>
+      <p className="admin-hint">
+        Renaming a slot here does not erase who already redeemed that number.
+        The new name only applies to whoever has not claimed that slot yet.
+        A slot with no name on file shows as whisky-N.
+      </p>
+
+      {ranges.map((range) => (
+        <div key={range.id} className="whiskey-range-group">
+          <h3>Range {range.id}</h3>
+          <ul className="whiskey-admin-list">
+            {Array.from({ length: 10 }, (_, i) => range.startSlot + i).map((number) => {
+              const slot = slotsByNumber.get(number) || { number, name: null }
+              return (
+                <li key={number}>
+                  <span className="slot-number-badge">{number}</span>
+                  {editingSlot === number ? (
+                    <>
+                      <input value={draftName} onChange={(e) => setDraftName(e.target.value)} autoFocus />
+                      <button className="btn btn-primary btn-small" onClick={() => requestSave(slot)}>Save</button>
+                      <button className="btn btn-secondary btn-small" onClick={() => setEditingSlot(null)}>Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="slot-name">{slot.name || `whisky-${number}`}</span>
+                      <button className="btn btn-secondary btn-small" onClick={() => startEditing(slot)}>Edit</button>
+                    </>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ))}
+
+      <ConfirmDialog
+        open={Boolean(pendingChange)}
+        title="Swap whiskey"
+        message={
+          pendingChange
+            ? `Change slot ${pendingChange.slot.number} from "${pendingChange.slot.name || `whisky-${pendingChange.slot.number}`}" to "${pendingChange.newName || `whisky-${pendingChange.slot.number}`}"?`
+            : ''
+        }
+        confirmLabel="Confirm swap"
+        onConfirm={async () => {
+          await renameWhiskeySlot(pendingChange.slot.number, pendingChange.newName)
+          setPendingChange(null)
+          setEditingSlot(null)
+        }}
+        onCancel={() => setPendingChange(null)}
+      />
+    </div>
+  )
+}

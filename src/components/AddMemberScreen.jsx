@@ -1,11 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useClubData } from '../context/DataContext'
-import { listAllRanges } from '../domain/clubRules'
-
-const PAYMENT_METHODS = [
-  { value: 'member_account', label: 'Member account' },
-  { value: 'cash_credit_card', label: 'Cash / credit card' },
-]
+import { listAllRanges, PAYMENT_METHODS } from '../domain/clubRules'
 
 /**
  * A code that matches an existing member reuses that member's record

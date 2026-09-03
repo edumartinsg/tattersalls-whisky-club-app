@@ -32,10 +32,12 @@ function doPost(request) {
   const handlers = {
     upsertMember: upsertMember,
     updateMemberIdentity: updateMemberIdentity,
+    mergeMember: mergeMember,
+    bulkRenameMembers: bulkRenameMembers,
     upsertWhiskeySlot: upsertWhiskeySlot,
     enrollMemberInRange: enrollMemberInRange,
     upsertRedemption: upsertRedemption,
-    lockMembership: lockMembership,
+    renewMembership: renewMembership,
     bulkSeed: bulkSeed,
     bulkUpdateWhiskeyNames: bulkUpdateWhiskeyNames,
   }
@@ -186,6 +188,65 @@ function updateMemberIdentity(payload) {
   return { ok: true, oldId: currentId, newId: newCode }
 }
 
+/**
+ * A one time cleanup tool for exactly the situation that comes up when
+ * the same person exists twice under two different ids, usually because
+ * a nickname change split their history into two records before the
+ * code was known for both. This moves every membership from the old id
+ * onto the surviving id and deletes the old member row entirely, rather
+ * than leaving a hollow duplicate behind that could confuse a future
+ * search.
+ */
+function mergeMember(payload) {
+  const membersSheet = getSheet(SHEET_MEMBERS)
+  const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
+
+  const fromRowIndex = findRowIndexByValue(membersSheet, 'id', payload.fromId)
+  const toRowIndex = findRowIndexByValue(membersSheet, 'id', payload.toId)
+  if (fromRowIndex === -1 || toRowIndex === -1) {
+    throw new Error('Both members must exist to merge them.')
+  }
+
+  membersSheet.getRange(toRowIndex, 1, 1, 4).setValues([[payload.toId, payload.name, payload.toId, payload.active]])
+
+  const values = membershipsSheet.getDataRange().getValues()
+  const memberIdCol = values[0].indexOf('memberId')
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][memberIdCol] === payload.fromId) {
+      membershipsSheet.getRange(i + 1, memberIdCol + 1).setValue(payload.toId)
+    }
+  }
+
+  membersSheet.deleteRow(fromRowIndex)
+
+  return { ok: true }
+}
+
+/**
+ * Renames a batch of members in one pass rather than one call per person,
+ * since a naming convention change (like standardising to first name
+ * before last name) touches every row in the sheet at once, and doing
+ * that as dozens of separate network calls would be slow and would leave
+ * the sheet half converted if connectivity dropped partway through.
+ */
+function bulkRenameMembers(renames) {
+  const sheet = getSheet(SHEET_MEMBERS)
+  const values = sheet.getDataRange().getValues()
+  const idCol = values[0].indexOf('id')
+  const nameCol = values[0].indexOf('name')
+  const renameById = {}
+  renames.forEach((r) => { renameById[r.id] = r.name })
+
+  for (let i = 1; i < values.length; i++) {
+    const id = values[i][idCol]
+    if (Object.prototype.hasOwnProperty.call(renameById, id)) {
+      sheet.getRange(i + 1, nameCol + 1).setValue(renameById[id])
+    }
+  }
+
+  return { ok: true, renamed: renames.length }
+}
+
 function upsertWhiskeySlot(slot) {
   const sheet = getSheet(SHEET_SLOTS)
   const rowIndex = findRowIndexByValue(sheet, 'number', slot.number)
@@ -228,16 +289,41 @@ function upsertRedemption(redemption) {
   return { ok: true }
 }
 
-function lockMembership(payload) {
+/**
+ * Renewing resets the one year validity clock without touching what has
+ * already been redeemed, since renewal is about keeping member pricing
+ * on future pours, not about re-issuing whiskeys already given out for
+ * free. The notification email mirrors the enrollment one so the same
+ * inbox stays the single log of every payment event, new sign ups and
+ * renewals alike, rather than splitting that record across two places.
+ */
+function renewMembership(payload) {
   const sheet = getSheet(SHEET_MEMBERSHIPS)
   const rowIndex = findRowIndexByValue(sheet, 'id', payload.membershipId)
   if (rowIndex === -1) {
     throw new Error('Membership not found')
   }
   const headers = sheet.getDataRange().getValues()[0]
-  const lockedCol = headers.indexOf('locked') + 1
-  sheet.getRange(rowIndex, lockedCol).setValue(true)
-  return { ok: true }
+  const activationDateCol = headers.indexOf('activationDate') + 1
+  const paymentMethodCol = headers.indexOf('paymentMethod') + 1
+  const rangeIdCol = headers.indexOf('rangeId') + 1
+  const memberIdCol = headers.indexOf('memberId') + 1
+
+  const row = sheet.getRange(rowIndex, 1, 1, headers.length).getValues()[0]
+  const rangeId = row[rangeIdCol - 1]
+  const memberId = row[memberIdCol - 1]
+  const renewalDate = new Date().toISOString().slice(0, 10)
+
+  sheet.getRange(rowIndex, activationDateCol).setValue(renewalDate)
+  sheet.getRange(rowIndex, paymentMethodCol).setValue(payload.paymentMethod)
+
+  const membersSheet = getSheet(SHEET_MEMBERS)
+  const memberRowIndex = findRowIndexByValue(membersSheet, 'id', memberId)
+  const memberName = memberRowIndex === -1 ? memberId : membersSheet.getRange(memberRowIndex, 2).getValue()
+
+  sendRenewalEmail({ name: memberName, code: memberId, rangeId, paymentMethod: payload.paymentMethod, renewalDate })
+
+  return { ok: true, activationDate: renewalDate }
 }
 
 /**
@@ -298,6 +384,15 @@ function sendEnrollmentEmail(enrollment) {
   }
   const subject = 'New member added to the whisky club'
   const body = `New member: "${enrollment.name}", code: ${enrollment.code || 'no code'}, was added to range ${enrollment.rangeId}, payment made via ${enrollment.paymentMethod}, date ${enrollment.activationDate}.`
+  MailApp.sendEmail(NOTIFICATION_EMAIL, subject, body)
+}
+
+function sendRenewalEmail(renewal) {
+  if (!NOTIFICATION_EMAIL) {
+    return
+  }
+  const subject = 'Whisky club membership renewed'
+  const body = `Membership renewed: "${renewal.name}", code: ${renewal.code}, range ${renewal.rangeId}, payment made via ${renewal.paymentMethod}, renewal date ${renewal.renewalDate}.`
   MailApp.sendEmail(NOTIFICATION_EMAIL, subject, body)
 }
 

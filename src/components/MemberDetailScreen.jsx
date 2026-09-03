@@ -25,13 +25,14 @@ function rangeStart(rangeId) {
  * save.
  */
 export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
-  const { state, toggleRedemption, lockMembership, updateMemberIdentity } = useClubData()
+  const { state, toggleRedemption, updateMemberIdentity, renewMembership, setMemberActive } = useClubData()
   const [sortBy, setSortBy] = useState('range')
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState('')
   const [draftCode, setDraftCode] = useState('')
   const [pendingSave, setPendingSave] = useState(null)
   const [editError, setEditError] = useState(null)
+  const [pendingActiveChange, setPendingActiveChange] = useState(false)
 
   const member = state.members.find((m) => m.id === memberId)
 
@@ -110,8 +111,16 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
         ) : (
           <div>
             <h2>{member.name}</h2>
-            <p className="member-code">{member.code || 'No code on file'}</p>
-            <button className="btn btn-secondary btn-small" onClick={startEditing}>Edit member</button>
+            <p className="member-code">
+              {member.code || 'No code on file'}
+              {!member.active && <span className="inactive-tag">inactive</span>}
+            </p>
+            <div className="member-detail-actions">
+              <button className="btn btn-secondary btn-small" onClick={startEditing}>Edit member</button>
+              <button className="btn btn-danger btn-small" onClick={() => setPendingActiveChange(true)}>
+                {member.active ? 'Remove member' : 'Reactivate member'}
+              </button>
+            </div>
           </div>
         )}
         <button className="btn btn-secondary" onClick={onBack}>Back</button>
@@ -136,7 +145,7 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
           membership={membership}
           whiskeySlotsByNumber={whiskeySlotsByNumber}
           onToggle={(membershipId, slotNumber, consumed) => toggleRedemption(membershipId, slotNumber, consumed)}
-          onLock={lockMembership}
+          onRenew={renewMembership}
           showMemberName={false}
         />
       ))}
@@ -152,6 +161,22 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
         confirmLabel="Save"
         onConfirm={confirmSave}
         onCancel={() => setPendingSave(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingActiveChange}
+        title={member.active ? 'Remove member' : 'Reactivate member'}
+        message={
+          member.active
+            ? `Remove ${member.name}? Their redemption history stays saved and can be reactivated later.`
+            : `Reactivate ${member.name}? Their open balance becomes valid again.`
+        }
+        confirmLabel={member.active ? 'Remove' : 'Reactivate'}
+        onConfirm={async () => {
+          await setMemberActive(member.id, !member.active)
+          setPendingActiveChange(false)
+        }}
+        onCancel={() => setPendingActiveChange(false)}
       />
     </div>
   )

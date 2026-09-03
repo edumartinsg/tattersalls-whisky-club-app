@@ -43,8 +43,8 @@ export class GoogleSheetsRepository extends DataRepository {
     return this._post('upsertRedemption', redemption)
   }
 
-  async lockMembership(membershipId) {
-    return this._post('lockMembership', { membershipId })
+  async renewMembership(payload) {
+    return this._post('renewMembership', payload)
   }
 
   /**

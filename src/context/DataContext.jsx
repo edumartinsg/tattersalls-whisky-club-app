@@ -58,14 +58,20 @@ export function DataProvider({ repository, children }) {
     await repository.saveRedemption({ membershipId, slotNumber, consumed })
   }, [repository])
 
-  const lockMembership = useCallback(async (membershipId) => {
+  /**
+   * The activation date moves forward, everything already redeemed stays
+   * exactly as it was, since renewal is only ever about buying more from
+   * this range going forward, never about re-issuing free pours.
+   */
+  const renewMembership = useCallback(async (membershipId, paymentMethod) => {
+    const renewalDate = new Date().toISOString().slice(0, 10)
     setState((prev) => ({
       ...prev,
       rangeMemberships: prev.rangeMemberships.map((m) =>
-        m.id === membershipId ? { ...m, locked: true } : m
+        m.id === membershipId ? { ...m, activationDate: renewalDate, paymentMethod } : m
       ),
     }))
-    await repository.lockMembership(membershipId)
+    await repository.renewMembership({ membershipId, paymentMethod })
   }, [repository])
 
   /**
@@ -186,13 +192,13 @@ export function DataProvider({ repository, children }) {
       servedFromCache,
       reload,
       toggleRedemption,
-      lockMembership,
+      renewMembership,
       setMemberActive,
       renameWhiskeySlot,
       enrollMemberInRange,
       updateMemberIdentity,
     }),
-    [state, loading, error, servedFromCache, reload, toggleRedemption, lockMembership, setMemberActive, renameWhiskeySlot, enrollMemberInRange, updateMemberIdentity]
+    [state, loading, error, servedFromCache, reload, toggleRedemption, renewMembership, setMemberActive, renameWhiskeySlot, enrollMemberInRange, updateMemberIdentity]
   )
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>

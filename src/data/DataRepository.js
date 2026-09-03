@@ -50,7 +50,11 @@ export class DataRepository {
     throw new Error('saveRedemption must be implemented by the concrete repository')
   }
 
-  async lockMembership(membershipId) {
-    throw new Error('lockMembership must be implemented by the concrete repository')
+  /**
+   * Separate from a plain field update because renewal is a payment
+   * event with its own email, not just a date being edited.
+   */
+  async renewMembership(payload) {
+    throw new Error('renewMembership must be implemented by the concrete repository')
   }
 }

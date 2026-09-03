@@ -71,8 +71,8 @@ export class LocalCacheRepository extends DataRepository {
     return this._saveWithFallback('saveRedemption', redemption)
   }
 
-  async lockMembership(membershipId) {
-    return this._saveWithFallback('lockMembership', membershipId)
+  async renewMembership(payload) {
+    return this._saveWithFallback('renewMembership', payload)
   }
 
   /**

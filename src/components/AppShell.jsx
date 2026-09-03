@@ -87,7 +87,7 @@ export function AppShell() {
             )}
             {screen.tab === 'whiskeys' && <WhiskeysScreen />}
             {screen.tab === 'ranges' && (
-              <RangesScreen initialRangeId={screen.rangeId} onOpenAddMember={openAddMember} />
+              <RangesScreen initialRangeId={screen.rangeId} onOpenAddMember={openAddMember} onOpenMember={openMember} />
             )}
             {screen.tab === 'memberDetail' && (
               <MemberDetailScreen

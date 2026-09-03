@@ -1,136 +1,134 @@
 # Whisky Club
 
-Sistema de controle do whisky club, organizado por range de whiskeys (blocos
-de 10, exemplo 1-10, 11-20) em vez de por ano. O app roda inteiramente no
-navegador, hospedado de graca no GitHub Pages, e usa uma planilha Google
-como banco de dados real, atraves de um backend gratuito (Google Apps
-Script).
+Whisky club control system, organised by whiskey range (blocks of 10, for
+example 1-10, 11-20) instead of by year. The app runs entirely in the
+browser, hosted for free on GitHub Pages, and uses a Google Sheet as the
+real database, through a free backend (Google Apps Script).
 
-## Como o sistema funciona
+## How the system works
 
-O app e sempre quem manda. Toda tela fala com o backend, nunca direto com a
-planilha. A planilha serve como espelho legivel e backup automatico, nao
-como o lugar onde as regras de negocio vivem.
+The app is always the one in charge. Every screen talks to the backend,
+never directly to the spreadsheet. The spreadsheet works as a readable
+mirror and automatic backup, not as the place where business rules live.
 
-Cada socio pode ter uma ou mais "memberships", uma membership e a compra de
-um range especifico (por exemplo, range 11-20), com sua propria data de
-ativacao e forma de pagamento. Um mesmo socio pode ter comprado varios
-ranges ao longo do tempo, cada um com seu proprio prazo de validade de 1
-ano. Um whiskey ainda nao resgatado continua valendo mesmo depois do prazo
-de 1 ano expirar, a expiracao so afeta coisas fora deste app (como o preco
-cobrado no sistema do bar).
+Each member can have one or more "memberships", a membership is the
+purchase of a specific range (for example, range 11-20), with its own
+activation date and payment method. The same member can have bought
+several ranges over time, each with its own one year validity window. A
+whiskey that has not been redeemed yet stays valid even after that one
+year window expires, expiration only affects things outside this app
+(like the price charged in the bar's own system).
 
-## Passo 1, criar a planilha e o backend
+## Step 1, create the spreadsheet and the backend
 
-1. Crie uma Google Sheet nova e vazia, na conta Google do clube.
-2. Va em Extensoes > Apps Script.
-3. Apague o conteudo padrao do arquivo `Code.gs` e cole o conteudo de
-   `apps-script/Code.gs` deste projeto.
-4. No topo do arquivo, edite a linha `const NOTIFICATION_EMAIL = ''` e
-   coloque entre aspas o email que deve receber o aviso de novo membro.
-   Sem isso preenchido, o email simplesmente nao e enviado.
-5. Rode a funcao `setupSheets` uma vez (cria as quatro abas usadas pelo
-   backend, Members, RangeMemberships, Redemptions, WhiskeySlots).
-6. Clique em Implantar > Nova implantacao, tipo Aplicativo da web,
-   executar como Eu mesmo, acesso Qualquer pessoa. Copie a URL gerada,
-   termina em `/exec`.
+1. Create a new, empty Google Sheet on the club's Google account.
+2. Go to Extensions > Apps Script.
+3. Delete the default content of the `Code.gs` file and paste in the
+   content of `apps-script/Code.gs` from this project.
+4. At the top of the file, edit the line `const NOTIFICATION_EMAIL = ''`
+   and put the email that should receive the new member notice inside
+   the quotes. Without this filled in, the email simply does not send.
+5. Run the `setupSheets` function once (creates the four sheets the
+   backend uses, Members, RangeMemberships, Redemptions, WhiskeySlots).
+6. Click Deploy > New deployment, type Web app, execute as Me, access
+   Anyone. Copy the generated URL, it ends in `/exec`.
 
-## Passo 2, importar o historico
+## Step 2, import the historical data
 
-O `seed.json` em `data-migration/` ja foi gerado a partir da planilha
-antiga, mapeando cada temporada antiga (2021/2022 a 2025/2026) para o range
-numerico correspondente, ja que cada temporada sempre vendeu exatamente um
-bloco de 10 whiskeys.
+The `seed.json` in `data-migration/` has already been generated from the
+old spreadsheet, mapping each old season (2021/2022 through 2025/2026) to
+its matching numeric range, since each season always sold exactly one
+block of 10 whiskeys.
 
-Duas coisas pra saber antes de importar:
+Two things worth knowing before importing:
 
-- Nomes que mudaram entre temporadas nao sao unidos automaticamente. Por
-  exemplo "Airey, Alexis" nas temporadas antigas e "Airey, Lexi" na atual
-  entraram como duas pessoas diferentes.
-- A data de ativacao de cada membership historica foi definida como 1 de
-  fevereiro do primeiro ano da temporada correspondente, ja que e uma data
-  fictícia (o dado real nunca foi registrado no processo antigo).
+- Names that changed between seasons are not merged automatically. For
+  example "Airey, Alexis" in the older seasons and "Airey, Lexi" in the
+  current one were imported as two different people.
+- The activation date of each historical membership was set to February
+  1st of that season's first year, since it is a fictional date, the
+  real one was never recorded in the old process.
 
-Pra importar, no terminal, dentro de `data-migration`:
+To import, in the terminal, inside `data-migration`:
 
 ```
 pip install openpyxl
 python parse_legacy_excel.py Whisky_Club_2025-26.xlsx
-python import_seed.py "URL_DO_APPS_SCRIPT" seed.json
+python import_seed.py "APPS_SCRIPT_URL" seed.json
 ```
 
-## Passo 3, configurar o app
+## Step 3, configure the app
 
-Abra `src/config.js` e troque `APPS_SCRIPT_WEB_APP_URL` pela URL do passo 1
-e `APP_PIN` por um numero simples que a equipe do bar vai usar.
+Open `src/config.js` and replace `APPS_SCRIPT_WEB_APP_URL` with the URL
+from step 1, and `APP_PIN` with a simple number the bar staff will use.
 
-## Passo 4, testar localmente
+## Step 4, test locally
 
-Rode `npm install` e depois `npm run dev`, abra o endereco que aparecer no
-terminal. Teste a busca de socio, adicionar um socio a um range, tickar e
-destickar whiskeys, editar o nome de um whiskey.
+Run `npm install` and then `npm run dev`, open the address that shows up
+in the terminal. Test member search, adding a member to a range, ticking
+and unticking whiskeys, editing a whiskey name.
 
-## Passo 5, publicar no GitHub Pages
+## Step 5, publish on GitHub Pages
 
 ```
-VITE_BASE_PATH=/nome-do-repositorio/ npm run build
+VITE_BASE_PATH=/repository-name/ npm run build
 npm run deploy
 ```
 
-Depois ative o GitHub Pages nas configuracoes do repositorio, apontando
-para a branch `gh-pages`.
+Then enable GitHub Pages in the repository settings, pointing at the
+`gh-pages` branch.
 
-## Atualizar nomes de whiskeys sem afetar sócios
+## Updating whiskey names without touching members
 
-Quando a lista de whiskeys mudar (troca de garrafa, lista corrigida), rode
-o script abaixo, ele mexe só na aba WhiskeySlots, nunca em sócios,
-memberships ou consumo:
+When the whiskey list changes (a bottle runs out, a name gets corrected),
+run the script below. It only touches the WhiskeySlots sheet, never
+members, memberships, or redemptions:
 
 ```
-python update_whiskey_names.py "URL_DO_APPS_SCRIPT" whiskey_names.json
+python update_whiskey_names.py "APPS_SCRIPT_URL" whiskey_names.json
 ```
 
-O arquivo `whiskey_names.json` tem o formato `{"1": "Nome do whiskey", "2": "..."}`.
-Edite esse arquivo com os nomes atualizados antes de rodar o script.
+The `whiskey_names.json` file has the shape `{"1": "Whiskey name", "2": "..."}`.
+Edit that file with the updated names before running the script.
 
-## Passo 6, acessar pelo iPad
+## Step 6, access from the iPad
 
-Abra o link direto no Safari, nao dentro do Notion, e use "Adicionar a
-Tela de Inicio". Um link normal dentro do Notion (que abre em nova aba) e
-seguro, so o iframe embutido deve ser evitado.
+Open the link directly in Safari, not inside Notion, and use "Add to Home
+Screen". A plain link inside Notion (that opens in a new tab) is safe,
+only the embedded iframe should be avoided.
 
-## Estrutura das paginas
+## Page structure
 
-- Home, busca de socio, botao de adicionar socio, busca de whiskey.
-- Members, lista de socios ativos (e inativos, opcional), remover e
-  reativar.
-- Whiskeys, catalogo completo dos 100 slots, agrupado por range, editavel.
-- Ranges, uma aba por bloco de 10 (1-10, 11-20, ate 91-100), mostrando a
-  tabela de socios daquele range com o checklist de 10 whiskeys, e o botao
-  de bloquear membro.
-- Add member, formulario de nome, codigo, range e forma de pagamento
-  (member account ou cash/credit card). Se o codigo digitado ja existir,
-  o sistema reconhece o socio e so adiciona o novo range a conta dele, em
-  vez de criar um socio duplicado.
+- Home, member search, add member button, whiskey search.
+- Members, list of active members (and inactive ones, optionally), remove
+  and reactivate.
+- Whiskeys, full catalog of the 100 slots, grouped by range, editable.
+- Ranges, one tab per block of 10 (1-10, 11-20, up to 91-100), showing the
+  table of members in that range with the 10 whiskey checklist, and the
+  lock member button.
+- Add member, form for name, code, range, and payment method (member
+  account or cash/credit card). If the code entered already exists, the
+  system recognises the member and only adds the new range to their
+  account, instead of creating a duplicate member.
 
-## O que o app nao faz
+## What the app does not do
 
-Nao integra com o sistema de POS do bar. O desconto de 100% no whiskey
-gratis continua sendo aplicado manualmente pela equipe.
+It does not integrate with the bar's POS system. The 100% discount on the
+free whiskey is still applied manually by staff.
 
 ## Backup
 
-Alem da planilha Google, que atualiza a cada acao, existe o botao
-"Export backup to Excel" dentro do app, a qualquer momento.
+Besides the Google Sheet itself, which updates on every action, there is
+an "Export backup to Excel" button inside the app, available at any time.
 
-## Estrutura do codigo
+## Code structure
 
 ```
 src/
-  data/            Camada de acesso a dados, isolada da interface
-  domain/          Regras de negocio puras (ranges, expiracao, bloqueio)
-  context/         Estado compartilhado entre as telas
+  data/            Data access layer, isolated from the interface
+  domain/          Pure business rules (ranges, expiration, locking)
+  context/         State shared across screens
   components/      Interface
-apps-script/       Backend que roda dentro da Google Sheet
-data-migration/    Scripts usados uma unica vez para importar o historico
+apps-script/       Backend that runs inside the Google Sheet
+data-migration/    Scripts used once to import the historical data
 ```

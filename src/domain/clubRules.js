@@ -10,6 +10,19 @@ export const TOTAL_SLOTS = 100
 export const MEMBERSHIP_VALIDITY_DAYS = 365
 
 /**
+ * Shared between the add member form and the renewal form, because both
+ * are recording the same real world event, a payment (or the deliberate
+ * absence of one). Keeping one list instead of two copies is what stops
+ * them from quietly drifting apart if a payment method is ever added or
+ * renamed.
+ */
+export const PAYMENT_METHODS = [
+  { value: 'member_account', label: 'Member account' },
+  { value: 'cash_credit_card', label: 'Cash / credit card' },
+  { value: 'none', label: 'None' },
+]
+
+/**
  * There are always exactly ten ranges covering the full 1 to 100 catalog.
  * They are generated instead of stored, because storing them would let
  * them drift out of sync with the fixed size the club described.
@@ -49,6 +62,12 @@ export function isMembershipExpired(rangeMembership, today = new Date()) {
   return today > expiryDate
 }
 
+/**
+ * Completion is always computed from the actual redemption rows, never
+ * read from a stored flag, because a flag can fall out of sync with
+ * reality (a membership imported already finished, for example) while
+ * the ten checkboxes themselves cannot lie about their own state.
+ */
 export function isMembershipComplete(rangeMembership) {
   return rangeMembership.redemptions.length > 0 && rangeMembership.redemptions.every((r) => r.consumed)
 }
@@ -86,19 +105,6 @@ export function buildRedemptionsForRange(rangeId) {
 }
 
 /**
- * The memberships worth showing on a member's own page are the ones still
- * needing attention, either because they are not yet locked or because
- * they still have unclaimed slots. A fully consumed and locked membership
- * is finished business and would only clutter the view.
- */
-export function listOpenMemberships(memberId, rangeMemberships) {
-  return rangeMemberships
-    .filter((m) => m.memberId === memberId)
-    .filter((m) => !m.locked || !isMembershipComplete(m))
-    .sort((a, b) => a.rangeId.localeCompare(b.rangeId))
-}
-
-/**
  * Used by the dashboard style summary on the ranges list, so staff can see
  * at a glance which range blocks still have outstanding pours without
  * opening every one of them.
@@ -107,4 +113,14 @@ export function countOpenSlotsInRange(rangeId, rangeMemberships) {
   return rangeMemberships
     .filter((m) => m.rangeId === rangeId)
     .reduce((total, m) => total + m.redemptions.filter((r) => !r.consumed).length, 0)
+}
+
+/**
+ * Used on the range tabs to show how many members have ever bought into
+ * a range, regardless of whether they have finished, expired, or are
+ * still mid way through it. It answers "how many signed up", a different
+ * question than "how many still owe something" (countOpenSlotsInRange).
+ */
+export function countMembersInRange(rangeId, rangeMemberships) {
+  return rangeMemberships.filter((m) => m.rangeId === rangeId).length
 }

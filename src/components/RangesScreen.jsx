@@ -1,10 +1,24 @@
 import { useMemo, useState } from 'react'
 import { useClubData } from '../context/DataContext'
-import { listAllRanges, countOpenSlotsInRange } from '../domain/clubRules'
+import { listAllRanges, countMembersInRange } from '../domain/clubRules'
 import { MembershipCard } from './MembershipCard'
 
-export function RangesScreen({ initialRangeId, onOpenAddMember }) {
-  const { state, toggleRedemption, lockMembership } = useClubData()
+/**
+ * A tiny inline person shape instead of an emoji or an icon font, so the
+ * count stays legible and consistent at this small size without pulling
+ * in a dependency for one glyph.
+ */
+function AvatarIcon() {
+  return (
+    <svg className="avatar-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="10" cy="7" r="3.4" fill="currentColor" />
+      <path d="M3 17c0-3.6 3.1-6 7-6s7 2.4 7 6" fill="currentColor" />
+    </svg>
+  )
+}
+
+export function RangesScreen({ initialRangeId, onOpenAddMember, onOpenMember }) {
+  const { state, toggleRedemption, renewMembership } = useClubData()
   const ranges = listAllRanges()
   const [activeRangeId, setActiveRangeId] = useState(initialRangeId || ranges[0].id)
 
@@ -26,7 +40,7 @@ export function RangesScreen({ initialRangeId, onOpenAddMember }) {
     <div className="ranges-screen">
       <div className="range-tabs">
         {ranges.map((r) => {
-          const openCount = countOpenSlotsInRange(r.id, state.rangeMemberships)
+          const memberCount = countMembersInRange(r.id, state.rangeMemberships)
           return (
             <button
               key={r.id}
@@ -34,7 +48,12 @@ export function RangesScreen({ initialRangeId, onOpenAddMember }) {
               onClick={() => setActiveRangeId(r.id)}
             >
               {r.id}
-              {openCount > 0 && <span className="range-tab-count">{openCount}</span>}
+              {memberCount > 0 && (
+                <span className="range-tab-count">
+                  <AvatarIcon />
+                  {memberCount}
+                </span>
+              )}
             </button>
           )
         })}
@@ -57,7 +76,8 @@ export function RangesScreen({ initialRangeId, onOpenAddMember }) {
           membership={membership}
           whiskeySlotsByNumber={whiskeySlotsByNumber}
           onToggle={(membershipId, slotNumber, consumed) => toggleRedemption(membershipId, slotNumber, consumed)}
-          onLock={lockMembership}
+          onRenew={renewMembership}
+          onOpenMember={onOpenMember}
           showMemberName={true}
         />
       ))}

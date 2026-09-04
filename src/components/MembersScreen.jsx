@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useClubData } from '../context/DataContext'
 import { ConfirmDialog } from './ConfirmDialog'
+import { isTemporaryId } from '../domain/clubRules'
 
 export function MembersScreen({ onOpenMember, onOpenAddMember }) {
   const { state, setMemberActive } = useClubData()
@@ -28,7 +29,7 @@ export function MembersScreen({ onOpenMember, onOpenAddMember }) {
         {visibleMembers.map((m) => (
           <li key={m.id} className={m.active ? '' : 'member-inactive'}>
             <button className="member-name-link" onClick={() => onOpenMember(m.id)}>
-              {m.name} {m.code ? `(${m.code})` : ''}
+              {m.name} {!isTemporaryId(m.id) ? `(${m.id})` : <span className="needs-code-tag">needs code</span>}
             </button>
             {m.active ? (
               <button className="btn btn-danger btn-small" onClick={() => setPendingRemoval(m)}>

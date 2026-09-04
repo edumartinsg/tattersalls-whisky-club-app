@@ -8,6 +8,20 @@
 export const RANGE_SIZE = 10
 export const TOTAL_SLOTS = 100
 export const MEMBERSHIP_VALIDITY_DAYS = 365
+export const TEMPORARY_ID_PREFIX = 'ID-'
+
+/**
+ * A temporary id is what a member gets when there is no real code on
+ * file for them yet, only ever a leftover from historical data that
+ * predates codes being tracked. It uses a shape, a letter sequence and a
+ * dash, that no real code in this club's own numbering ever takes (real
+ * codes are a single letter directly followed by digits, like A213 or
+ * M1), so a temporary id can never be confused with, or collide with, a
+ * genuine one, even the ones that happen to look like "M1" themselves.
+ */
+export function isTemporaryId(id) {
+  return typeof id === 'string' && id.startsWith(TEMPORARY_ID_PREFIX)
+}
 
 /**
  * Shared between the add member form and the renewal form, because both

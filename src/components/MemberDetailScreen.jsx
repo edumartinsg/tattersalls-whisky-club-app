@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useClubData } from '../context/DataContext'
 import { MembershipCard } from './MembershipCard'
 import { ConfirmDialog } from './ConfirmDialog'
+import { isTemporaryId } from '../domain/clubRules'
 
 const SORT_OPTIONS = [
   { value: 'range', label: 'Range' },
@@ -61,7 +62,7 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
 
   function startEditing() {
     setDraftName(member.name)
-    setDraftCode(member.code || '')
+    setDraftCode(isTemporaryId(member.id) ? '' : member.id)
     setEditError(null)
     setEditing(true)
   }
@@ -112,7 +113,7 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
           <div>
             <h2>{member.name}</h2>
             <p className="member-code">
-              {member.code || 'No code on file'}
+              {!isTemporaryId(member.id) ? member.id : 'No code on file'}
               {!member.active && <span className="inactive-tag">inactive</span>}
             </p>
             <div className="member-detail-actions">

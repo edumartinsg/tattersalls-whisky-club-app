@@ -45,8 +45,23 @@ function doPost(request) {
   if (!handler) {
     return jsonResponse({ error: 'Unknown action' })
   }
-  const result = handler(body.payload)
-  return jsonResponse(result)
+  /**
+   * A handler throwing (a real validation rejection, like a missing
+   * code, or the target row not existing) used to crash the whole
+   * request, and an uncaught crash here does not come back as our clean
+   * JSON, Apps Script replaces it with its own error page. The frontend
+   * would then fail to parse that as JSON and, unable to tell a real
+   * rejection apart from the network being down, silently queue it as
+   * if it were offline. Catching it here and always returning valid
+   * JSON, error included, is what lets the frontend surface the actual
+   * reason instead of hiding it behind a wrong "will retry later".
+   */
+  try {
+    const result = handler(body.payload)
+    return jsonResponse(result)
+  } catch (error) {
+    return jsonResponse({ error: error.message })
+  }
 }
 
 function jsonResponse(data) {
@@ -90,12 +105,16 @@ function findRowIndexByValue(sheet, columnName, value) {
  * Reshapes four flat sheets into the nested structure the frontend works
  * with, so the frontend never needs to know redemptions live in a sheet
  * separate from the membership they belong to.
+ *
+ * There is no separate code field here, the member's id is their code.
+ * Someone with no real code yet has an id following the ID-N pattern
+ * instead, which the frontend recognises and displays as "no code on
+ * file" rather than showing the placeholder itself.
  */
 function getState() {
   const members = readRows(getSheet(SHEET_MEMBERS)).map((row) => ({
     id: row.id,
     name: row.name,
-    code: row.code || null,
     active: row.active === true || row.active === 'TRUE',
   }))
 
@@ -131,7 +150,7 @@ function getState() {
 function upsertMember(member) {
   const sheet = getSheet(SHEET_MEMBERS)
   const rowIndex = findRowIndexByValue(sheet, 'id', member.id)
-  const rowValues = [member.id, member.name, member.code || '', Boolean(member.active)]
+  const rowValues = [member.id, member.name, Boolean(member.active)]
   if (rowIndex === -1) {
     sheet.appendRow(rowValues)
   } else {
@@ -142,11 +161,12 @@ function upsertMember(member) {
 
 /**
  * Renaming a member is not a plain field edit, because the member's id is
- * their code. Changing the code means every membership row that points
- * at the old id would silently stop matching that member unless it is
- * rewritten too. Doing both updates inside one function, rather than two
- * separate calls from the frontend, is what stops a membership from ever
- * being left pointing at an id nobody has anymore.
+ * their code, there is no separate code column at all. Changing it means
+ * every membership row that points at the old id would silently stop
+ * matching that member unless it is rewritten too. Doing both updates
+ * inside one function, rather than two separate calls from the frontend,
+ * is what stops a membership from ever being left pointing at an id
+ * nobody has anymore.
  */
 function updateMemberIdentity(payload) {
   const membersSheet = getSheet(SHEET_MEMBERS)
@@ -173,7 +193,7 @@ function updateMemberIdentity(payload) {
     }
   }
 
-  membersSheet.getRange(currentRowIndex, 1, 1, 3).setValues([[newCode, newName, newCode]])
+  membersSheet.getRange(currentRowIndex, 1, 1, 2).setValues([[newCode, newName]])
 
   if (idIsChanging) {
     const values = membershipsSheet.getDataRange().getValues()
@@ -207,7 +227,7 @@ function mergeMember(payload) {
     throw new Error('Both members must exist to merge them.')
   }
 
-  membersSheet.getRange(toRowIndex, 1, 1, 4).setValues([[payload.toId, payload.name, payload.toId, payload.active]])
+  membersSheet.getRange(toRowIndex, 1, 1, 3).setValues([[payload.toId, payload.name, payload.active]])
 
   const values = membershipsSheet.getDataRange().getValues()
   const memberIdCol = values[0].indexOf('memberId')
@@ -350,7 +370,7 @@ function enrollMemberInRange(enrollment) {
   const memberId = enrollment.code
   const memberAlreadyExists = findRowIndexByValue(membersSheet, 'id', memberId) !== -1
   if (!memberAlreadyExists) {
-    membersSheet.appendRow([memberId, enrollment.name, enrollment.code, true])
+    membersSheet.appendRow([memberId, enrollment.name, true])
   }
 
   const membershipId = `rm_${new Date().getTime()}`
@@ -378,8 +398,14 @@ function enrollMemberInRange(enrollment) {
   return { ok: true, memberId, membershipId }
 }
 
+/**
+ * A payment method of "none" means exactly that, no payment happened,
+ * usually a member being re-added after being removed by mistake. The
+ * notification email exists to log real payment events, sending it here
+ * would create a false record of a charge that never occurred.
+ */
 function sendEnrollmentEmail(enrollment) {
-  if (!NOTIFICATION_EMAIL) {
+  if (!NOTIFICATION_EMAIL || enrollment.paymentMethod === 'none') {
     return
   }
   const subject = 'New member added to the whisky club'
@@ -388,7 +414,7 @@ function sendEnrollmentEmail(enrollment) {
 }
 
 function sendRenewalEmail(renewal) {
-  if (!NOTIFICATION_EMAIL) {
+  if (!NOTIFICATION_EMAIL || renewal.paymentMethod === 'none') {
     return
   }
   const subject = 'Whisky club membership renewed'
@@ -408,9 +434,9 @@ function bulkSeed(seedData) {
   const redemptionsSheet = getSheet(SHEET_REDEMPTIONS)
   const slotsSheet = getSheet(SHEET_SLOTS)
 
-  const memberRows = seedData.members.map((m) => [m.id, m.name, m.code || '', Boolean(m.active)])
+  const memberRows = seedData.members.map((m) => [m.id, m.name, Boolean(m.active)])
   if (memberRows.length > 0) {
-    membersSheet.getRange(2, 1, memberRows.length, 4).setValues(memberRows)
+    membersSheet.getRange(2, 1, memberRows.length, 3).setValues(memberRows)
   }
 
   const membershipRows = []
@@ -477,7 +503,7 @@ function setupSheets() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet()
 
   const definitions = {
-    [SHEET_MEMBERS]: ['id', 'name', 'code', 'active'],
+    [SHEET_MEMBERS]: ['id', 'name', 'active'],
     [SHEET_MEMBERSHIPS]: ['id', 'memberId', 'rangeId', 'activationDate', 'paymentMethod', 'locked'],
     [SHEET_REDEMPTIONS]: ['membershipId', 'slotNumber', 'consumed'],
     [SHEET_SLOTS]: ['number', 'name'],

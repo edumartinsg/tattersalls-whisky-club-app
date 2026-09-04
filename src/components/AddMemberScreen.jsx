@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useClubData } from '../context/DataContext'
-import { listAllRanges, PAYMENT_METHODS } from '../domain/clubRules'
+import { listAllRanges, PAYMENT_METHODS, isTemporaryId } from '../domain/clubRules'
 
 /**
  * A code that matches an existing member reuses that member's record
@@ -23,7 +23,7 @@ export function AddMemberScreen({ initialRangeId, onDone }) {
   const matchedMember = useMemo(() => {
     const normalisedCode = code.trim().toLowerCase()
     if (!normalisedCode) return null
-    return state.members.find((m) => (m.code || '').toLowerCase() === normalisedCode) || null
+    return state.members.find((m) => !isTemporaryId(m.id) && m.id.toLowerCase() === normalisedCode) || null
   }, [state.members, code])
 
   async function handleSubmit(event) {

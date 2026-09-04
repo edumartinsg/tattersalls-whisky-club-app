@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useClubData } from '../context/DataContext'
-import { findRangeForSlot } from '../domain/clubRules'
+import { findRangeForSlot, isTemporaryId } from '../domain/clubRules'
 
 /**
  * This screen exists to replace the paginated printed list the club
@@ -17,7 +17,7 @@ export function HomeScreen({ onOpenMember, onOpenAddMember, onOpenRange }) {
     const query = memberQuery.trim().toLowerCase()
     if (!query) return []
     return state.members.filter(
-      (m) => m.name.toLowerCase().includes(query) || (m.code && m.code.toLowerCase().includes(query))
+      (m) => m.name.toLowerCase().includes(query) || (!isTemporaryId(m.id) && m.id.toLowerCase().includes(query))
     )
   }, [state.members, memberQuery])
 
@@ -51,7 +51,7 @@ export function HomeScreen({ onOpenMember, onOpenAddMember, onOpenRange }) {
             {memberResults.map((m) => (
               <li key={m.id}>
                 <button className="home-result-btn" onClick={() => onOpenMember(m.id)}>
-                  {m.name} {m.code ? `(${m.code})` : ''} {!m.active && <span className="inactive-tag">inactive</span>}
+                  {m.name} {!isTemporaryId(m.id) ? `(${m.id})` : ''} {!m.active && <span className="inactive-tag">inactive</span>}
                 </button>
               </li>
             ))}

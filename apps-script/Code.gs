@@ -14,6 +14,7 @@ const SHEET_MEMBERS = 'Members'
 const SHEET_MEMBERSHIPS = 'RangeMemberships'
 const SHEET_REDEMPTIONS = 'Redemptions'
 const SHEET_SLOTS = 'WhiskeySlots'
+const MEMBER_CODE_PATTERN = /^[A-Za-z]{1,2}[0-9]{1,3}$/
 
 // Filled in once during setup, see README.md. Left empty here so a forgotten
 // setup step fails loudly instead of silently emailing the wrong inbox.
@@ -178,6 +179,10 @@ function updateMemberIdentity(payload) {
 
   if (!newCode) {
     throw new Error('A member code is required.')
+  }
+  const isTemporaryPlaceholder = /^ID-\d+$/.test(newCode)
+  if (!isTemporaryPlaceholder && !MEMBER_CODE_PATTERN.test(newCode)) {
+    throw new Error('Code must be 1 to 2 letters followed by up to 3 numbers, like A213 or M1.')
   }
 
   const currentRowIndex = findRowIndexByValue(membersSheet, 'id', currentId)
@@ -362,6 +367,9 @@ function enrollMemberInRange(enrollment) {
   if (!enrollment.code) {
     throw new Error('A member code is required to enroll someone in a range.')
   }
+  if (!MEMBER_CODE_PATTERN.test(enrollment.code)) {
+    throw new Error('Code must be 1 to 2 letters followed by up to 3 numbers, like A213 or M1.')
+  }
 
   const membersSheet = getSheet(SHEET_MEMBERS)
   const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
@@ -519,4 +527,84 @@ function setupSheets() {
 
   const membershipsSheet = spreadsheet.getSheetByName(SHEET_MEMBERSHIPS)
   membershipsSheet.getRange('C:C').setNumberFormat('@')
+}
+
+/**
+ * Read only, changes nothing. A standing diagnostic, not a one time
+ * script, worth keeping around for whenever a manual Sheet edit is
+ * suspected of having broken the link between a member and their
+ * memberships, rather than assuming either way.
+ */
+function checkForOrphanedMemberships() {
+  const membersSheet = getSheet(SHEET_MEMBERS)
+  const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
+
+  const memberIds = new Set(
+    membersSheet.getDataRange().getValues().slice(1).map((row) => row[0]).filter(Boolean)
+  )
+
+  const membershipsValues = membershipsSheet.getDataRange().getValues()
+  const memberIdCol = membershipsValues[0].indexOf('memberId')
+  const rangeIdCol = membershipsValues[0].indexOf('rangeId')
+
+  const orphaned = []
+  for (let i = 1; i < membershipsValues.length; i++) {
+    const memberId = membershipsValues[i][memberIdCol]
+    if (memberId && !memberIds.has(memberId)) {
+      orphaned.push({ row: i + 1, memberId, rangeId: membershipsValues[i][rangeIdCol] })
+    }
+  }
+
+  Logger.log(`Checked ${membershipsValues.length - 1} membership rows against ${memberIds.size} members.`)
+  Logger.log(`Found ${orphaned.length} orphaned membership rows.`)
+  orphaned.forEach((o) => Logger.log(JSON.stringify(o)))
+}
+
+/**
+ * Read only, changes nothing. Every membership always has exactly ten
+ * redemption rows, created once at enrollment and never added to again,
+ * so any membership with more or fewer than ten is a sign something got
+ * written twice (or partially), not a legitimate state.
+ */
+function checkForDuplicateRedemptions() {
+  const redemptionsSheet = getSheet(SHEET_REDEMPTIONS)
+  const values = redemptionsSheet.getDataRange().getValues()
+  const membershipIdCol = values[0].indexOf('membershipId')
+
+  const countsByMembershipId = {}
+  for (let i = 1; i < values.length; i++) {
+    const id = values[i][membershipIdCol]
+    countsByMembershipId[id] = (countsByMembershipId[id] || 0) + 1
+  }
+
+  const problems = Object.keys(countsByMembershipId).filter((id) => countsByMembershipId[id] !== 10)
+  Logger.log(`Checked ${Object.keys(countsByMembershipId).length} memberships' redemption counts.`)
+  Logger.log(`Found ${problems.length} with a count other than 10.`)
+  problems.forEach((id) => Logger.log(`${id}: ${countsByMembershipId[id]} rows`))
+}
+
+/**
+ * Read only, changes nothing. One member should never hold two separate
+ * membership rows for the exact same range, that would mean they were
+ * enrolled into it twice.
+ */
+function checkForDuplicateMemberships() {
+  const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
+  const values = membershipsSheet.getDataRange().getValues()
+  const memberIdCol = values[0].indexOf('memberId')
+  const rangeIdCol = values[0].indexOf('rangeId')
+
+  const seen = {}
+  const duplicates = []
+  for (let i = 1; i < values.length; i++) {
+    const key = `${values[i][memberIdCol]}::${values[i][rangeIdCol]}`
+    if (seen[key]) {
+      duplicates.push({ row: i + 1, memberId: values[i][memberIdCol], rangeId: values[i][rangeIdCol] })
+    }
+    seen[key] = true
+  }
+
+  Logger.log(`Checked ${values.length - 1} membership rows.`)
+  Logger.log(`Found ${duplicates.length} duplicate member/range pairs.`)
+  duplicates.forEach((d) => Logger.log(JSON.stringify(d)))
 }

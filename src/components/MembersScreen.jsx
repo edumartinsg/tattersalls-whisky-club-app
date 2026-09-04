@@ -3,11 +3,10 @@ import { useClubData } from '../context/DataContext'
 import { ConfirmDialog } from './ConfirmDialog'
 import { isTemporaryId } from '../domain/clubRules'
 
-export function MembersScreen({ onOpenMember, onOpenAddMember }) {
+export function MembersScreen({ onOpenMember, onOpenAddMember, showInactive, onToggleShowInactive }) {
   const { state, setMemberActive } = useClubData()
   const [pendingRemoval, setPendingRemoval] = useState(null)
   const [pendingReactivation, setPendingReactivation] = useState(null)
-  const [showInactive, setShowInactive] = useState(false)
 
   const visibleMembers = state.members
     .filter((m) => showInactive || m.active)
@@ -21,7 +20,7 @@ export function MembersScreen({ onOpenMember, onOpenAddMember }) {
       </div>
 
       <label className="toggle-inactive">
-        <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+        <input type="checkbox" checked={showInactive} onChange={(e) => onToggleShowInactive(e.target.checked)} />
         Show inactive members
       </label>
 

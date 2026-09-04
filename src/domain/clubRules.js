@@ -24,6 +24,19 @@ export function isTemporaryId(id) {
 }
 
 /**
+ * A real code is always one or two letters followed by up to three
+ * digits, matching the pattern the club already uses on paper (A213,
+ * M1, AB12). Enforcing that shape at the point a code is typed in is
+ * what keeps every future id predictable and readable, rather than
+ * accepting arbitrary text that would make the sheet harder to scan.
+ */
+export const MEMBER_CODE_PATTERN = /^[A-Za-z]{1,2}\d{1,3}$/
+
+export function isValidMemberCode(code) {
+  return MEMBER_CODE_PATTERN.test(code.trim())
+}
+
+/**
  * Shared between the add member form and the renewal form, because both
  * are recording the same real world event, a payment (or the deliberate
  * absence of one). Keeping one list instead of two copies is what stops

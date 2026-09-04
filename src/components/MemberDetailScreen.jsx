@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useClubData } from '../context/DataContext'
 import { MembershipCard } from './MembershipCard'
 import { ConfirmDialog } from './ConfirmDialog'
-import { isTemporaryId } from '../domain/clubRules'
+import { isTemporaryId, isValidMemberCode } from '../domain/clubRules'
 
 const SORT_OPTIONS = [
   { value: 'range', label: 'Range' },
@@ -33,7 +33,7 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
   const [draftCode, setDraftCode] = useState('')
   const [pendingSave, setPendingSave] = useState(null)
   const [editError, setEditError] = useState(null)
-  const [pendingActiveChange, setPendingActiveChange] = useState(false)
+  const [pendingActiveTarget, setPendingActiveTarget] = useState(null)
 
   const member = state.members.find((m) => m.id === memberId)
 
@@ -70,6 +70,10 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
   function requestSave() {
     if (!draftCode.trim()) {
       setEditError('Code cannot be empty, it is used as the member id.')
+      return
+    }
+    if (!isValidMemberCode(draftCode)) {
+      setEditError('Code must be 1 to 2 letters followed by up to 3 numbers, like A213 or M1.')
       return
     }
     setEditError(null)
@@ -118,7 +122,7 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
             </p>
             <div className="member-detail-actions">
               <button className="btn btn-secondary btn-small" onClick={startEditing}>Edit member</button>
-              <button className="btn btn-danger btn-small" onClick={() => setPendingActiveChange(true)}>
+              <button className="btn btn-danger btn-small" onClick={() => setPendingActiveTarget(!member.active)}>
                 {member.active ? 'Remove member' : 'Reactivate member'}
               </button>
             </div>
@@ -165,19 +169,19 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
       />
 
       <ConfirmDialog
-        open={pendingActiveChange}
-        title={member.active ? 'Remove member' : 'Reactivate member'}
+        open={pendingActiveTarget !== null}
+        title={pendingActiveTarget ? 'Reactivate member' : 'Remove member'}
         message={
-          member.active
-            ? `Remove ${member.name}? Their redemption history stays saved and can be reactivated later.`
-            : `Reactivate ${member.name}? Their open balance becomes valid again.`
+          pendingActiveTarget
+            ? `Reactivate ${member.name}? Their open balance becomes valid again.`
+            : `Remove ${member.name}? Their redemption history stays saved and can be reactivated later.`
         }
-        confirmLabel={member.active ? 'Remove' : 'Reactivate'}
+        confirmLabel={pendingActiveTarget ? 'Reactivate' : 'Remove'}
         onConfirm={async () => {
-          await setMemberActive(member.id, !member.active)
-          setPendingActiveChange(false)
+          await setMemberActive(member.id, pendingActiveTarget)
+          setPendingActiveTarget(null)
         }}
-        onCancel={() => setPendingActiveChange(false)}
+        onCancel={() => setPendingActiveTarget(null)}
       />
     </div>
   )

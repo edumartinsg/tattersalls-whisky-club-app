@@ -21,6 +21,7 @@ export function RangesScreen({ initialRangeId, onOpenAddMember, onOpenMember }) 
   const { state, toggleRedemption, renewMembership } = useClubData()
   const ranges = listAllRanges()
   const [activeRangeId, setActiveRangeId] = useState(initialRangeId || ranges[0].id)
+  const [query, setQuery] = useState('')
 
   const whiskeySlotsByNumber = useMemo(
     () => new Map(state.whiskeySlots.map((s) => [s.number, s])),
@@ -35,6 +36,16 @@ export function RangesScreen({ initialRangeId, onOpenAddMember, onOpenMember }) 
       .map((m) => ({ ...m, memberName: membersById.get(m.memberId)?.name || 'Unknown member' }))
       .sort((a, b) => a.memberName.localeCompare(b.memberName))
   }, [state.rangeMemberships, activeRangeId, membersById])
+
+  const visibleMemberships = useMemo(() => {
+    const normalisedQuery = query.trim().toLowerCase()
+    if (!normalisedQuery) return membershipsForActiveRange
+    return membershipsForActiveRange.filter(
+      (m) =>
+        m.memberName.toLowerCase().includes(normalisedQuery) ||
+        m.memberId.toLowerCase().includes(normalisedQuery)
+    )
+  }, [membershipsForActiveRange, query])
 
   return (
     <div className="ranges-screen">
@@ -66,11 +77,21 @@ export function RangesScreen({ initialRangeId, onOpenAddMember, onOpenMember }) 
         </button>
       </div>
 
-      {membershipsForActiveRange.length === 0 && (
-        <p className="all-clear">No members enrolled in this range yet.</p>
+      <input
+        type="search"
+        className="search-input"
+        placeholder="Search this range by name or code"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+
+      {visibleMemberships.length === 0 && (
+        <p className="all-clear">
+          {membershipsForActiveRange.length === 0 ? 'No members enrolled in this range yet.' : 'No match in this range.'}
+        </p>
       )}
 
-      {membershipsForActiveRange.map((membership) => (
+      {visibleMemberships.map((membership) => (
         <MembershipCard
           key={membership.id}
           membership={membership}

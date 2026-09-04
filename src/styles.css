@@ -1,21 +1,23 @@
 /*
-  Palette and type choices are drawn from the product itself: amber
-  spirit, dark oak barrels, brass fittings. The interface is used
-  standing up at a bar under variable light, so contrast and tap target
-  size matter more than decoration here.
+  Palette is built from the club's own two brand colours, a deep navy
+  and a muted gold, with white for every bit of text. Variable names
+  stay the same as before (oak, amber) even though the colours no
+  longer look like wood or whisky, changing every usage site across the
+  file to match new names would be a much larger, riskier edit for zero
+  practical benefit, only the values themselves needed to change.
 */
 
 :root {
-  --oak-950: #1b1410;
-  --oak-900: #241b15;
-  --oak-800: #362a20;
-  --oak-700: #4a3a2c;
-  --amber-500: #c9812f;
-  --amber-400: #e0a54f;
-  --amber-300: #f0c98a;
-  --parchment: #f4ece0;
-  --success: #5f8a5a;
-  --danger: #b3462c;
+  --oak-950: #001f38;
+  --oak-900: #003359;
+  --oak-800: #0d4870;
+  --oak-700: #205c86;
+  --amber-500: #b2a06b;
+  --amber-400: #c2b280;
+  --amber-300: #d4c89a;
+  --parchment: #ffffff;
+  --success: #5f9a6a;
+  --danger: #c15a3d;
   --radius: 10px;
 }
 
@@ -257,6 +259,16 @@ button, input, select {
   opacity: 0.6;
   font-size: 0.85rem;
   margin-left: 6px;
+}
+
+.needs-code-tag {
+  color: var(--amber-300);
+  opacity: 0.85;
+  font-size: 0.8rem;
+  border: 1px solid var(--oak-700);
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-left: 4px;
 }
 
 /* Member detail */

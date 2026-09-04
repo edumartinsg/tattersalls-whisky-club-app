@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useClubData } from '../context/DataContext'
-import { listAllRanges, PAYMENT_METHODS, isTemporaryId } from '../domain/clubRules'
+import { listAllRanges, PAYMENT_METHODS, isTemporaryId, isValidMemberCode } from '../domain/clubRules'
 
 /**
  * A code that matches an existing member reuses that member's record
@@ -30,6 +30,10 @@ export function AddMemberScreen({ initialRangeId, onDone }) {
     event.preventDefault()
     if (!code.trim()) {
       setError('Enter the member code, it is used as their id.')
+      return
+    }
+    if (!isValidMemberCode(code)) {
+      setError('Code must be 1 to 2 letters followed by up to 3 numbers, like A213 or M1.')
       return
     }
     if (!name.trim() && !matchedMember) {

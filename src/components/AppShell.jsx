@@ -24,6 +24,7 @@ const TABS = [
 export function AppShell() {
   const { loading, error, servedFromCache, reload } = useClubData()
   const [screen, setScreen] = useState({ tab: 'home' })
+  const [showInactiveMembers, setShowInactiveMembers] = useState(false)
 
   function openMember(memberId) {
     setScreen({ tab: 'memberDetail', memberId, returnTab: screen.tab })
@@ -83,7 +84,12 @@ export function AppShell() {
               />
             )}
             {screen.tab === 'members' && (
-              <MembersScreen onOpenMember={openMember} onOpenAddMember={() => openAddMember(null)} />
+              <MembersScreen
+                onOpenMember={openMember}
+                onOpenAddMember={() => openAddMember(null)}
+                showInactive={showInactiveMembers}
+                onToggleShowInactive={setShowInactiveMembers}
+              />
             )}
             {screen.tab === 'whiskeys' && <WhiskeysScreen />}
             {screen.tab === 'ranges' && (

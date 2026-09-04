@@ -17,15 +17,37 @@ export function DataProvider({ repository, children }) {
   const [error, setError] = useState(null)
   const [servedFromCache, setServedFromCache] = useState(false)
 
+  /**
+   * The cached copy renders immediately, before any network call, so the
+   * app never shows a blank loading screen just because it has already
+   * seen this data once before. The real fetch still happens right after,
+   * quietly, in the background, and replaces the cached view the moment
+   * it lands. Only a genuinely first ever load, with nothing cached yet,
+   * has to actually wait, which is the same wait it always had.
+   */
   const reload = useCallback(async () => {
-    setLoading(true)
     setError(null)
+    const cached = repository.getCachedState()
+    if (cached) {
+      setState(cached)
+      setServedFromCache(true)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
+
     try {
       const freshState = await repository.loadState()
-      setServedFromCache(Boolean(freshState._servedFromCache))
       setState(freshState)
+      setServedFromCache(Boolean(freshState._servedFromCache))
     } catch (err) {
-      setError(err.message)
+      // A cached view is already on screen, showing an error on top of it
+      // would be worse than just leaving the stale (and clearly marked)
+      // data visible. An error only actually replaces the screen when
+      // there was nothing to fall back to in the first place.
+      if (!cached) {
+        setError(err.message)
+      }
     } finally {
       setLoading(false)
     }

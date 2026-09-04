@@ -15,6 +15,20 @@ export class DataRepository {
   }
 
   /**
+   * Returns whatever was last successfully loaded, synchronously, with no
+   * network call involved. This exists so the UI has something real to
+   * render the instant the app opens instead of a blank loading screen
+   * every single time, even when the data is a few seconds stale. A
+   * backend with no caching of its own simply has nothing to offer here,
+   * which is why the default is null rather than an error, this is a
+   * capability a repository may or may not have, not one every
+   * implementation is required to provide.
+   */
+  getCachedState() {
+    return null
+  }
+
+  /**
    * Members are archived, never deleted, since the club needs to keep a
    * departed member's history in case they rejoin later.
    */

@@ -38,6 +38,20 @@ export class LocalCacheRepository extends DataRepository {
     }
   }
 
+  /**
+   * A synchronous read of whatever is already sitting in local storage,
+   * used to paint the screen immediately on open while the real network
+   * request happens in the background. This never touches the network
+   * itself, that is the whole point, it has to be instant.
+   */
+  getCachedState() {
+    const cached = localStorage.getItem(STATE_CACHE_KEY)
+    if (!cached) {
+      return null
+    }
+    return { ...JSON.parse(cached), _servedFromCache: true }
+  }
+
   async _attemptFlush() {
     if (this.getPendingWrites().length === 0) {
       return
@@ -76,17 +90,25 @@ export class LocalCacheRepository extends DataRepository {
   }
 
   /**
-   * A write that fails because of the network, not because the data was
-   * invalid, gets queued instead of shown as an error. Someone ticking a
-   * checkbox on an iPad has no way to manually retry later, so the app
-   * carries that responsibility for them.
+   * Only a genuine connectivity failure gets queued for later. A browser
+   * fetch() that cannot reach the network at all rejects with a
+   * TypeError, that is the one case with no way for the person to fix it
+   * themselves right now, so the app carries the retry for them. Anything
+   * else, a validation rejection thrown deliberately by the backend, an
+   * HTTP error status, is a real answer that already arrived and needs
+   * to be shown, not hidden behind a queue it will never actually leave
+   * (retrying "this code already belongs to someone else" is never going
+   * to start succeeding just because time passed).
    */
   async _saveWithFallback(methodName, payload) {
     try {
       return await this.inner[methodName](payload)
     } catch (error) {
-      this._queuePendingWrite(methodName, payload)
-      return { queued: true }
+      if (error instanceof TypeError) {
+        this._queuePendingWrite(methodName, payload)
+        return { queued: true }
+      }
+      throw error
     }
   }
 

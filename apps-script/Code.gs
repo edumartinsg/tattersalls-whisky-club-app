@@ -608,3 +608,120 @@ function checkForDuplicateMemberships() {
   Logger.log(`Found ${duplicates.length} duplicate member/range pairs.`)
   duplicates.forEach((d) => Logger.log(JSON.stringify(d)))
 }
+
+/**
+ * Read only, changes nothing. Prints the full detail (activation date,
+ * payment method, and every slot's consumed status) for every membership
+ * belonging to the given member and range, specifically so a duplicate
+ * can be resolved by looking at which row actually has real tick history
+ * versus which one is empty or spurious, rather than guessing which of
+ * two rows is safe to remove.
+ */
+function inspectMembershipsFor(memberId, rangeId) {
+  const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
+  const redemptionsSheet = getSheet(SHEET_REDEMPTIONS)
+
+  const membershipsValues = membershipsSheet.getDataRange().getValues()
+  const headers = membershipsValues[0]
+  const memberIdCol = headers.indexOf('memberId')
+  const rangeIdCol = headers.indexOf('rangeId')
+
+  const redemptionsValues = redemptionsSheet.getDataRange().getValues()
+  const rHeaders = redemptionsValues[0]
+  const rMembershipCol = rHeaders.indexOf('membershipId')
+  const rSlotCol = rHeaders.indexOf('slotNumber')
+  const rConsumedCol = rHeaders.indexOf('consumed')
+
+  for (let i = 1; i < membershipsValues.length; i++) {
+    const row = membershipsValues[i]
+    if (row[memberIdCol] !== memberId || row[rangeIdCol] !== rangeId) continue
+
+    const record = {}
+    headers.forEach((h, idx) => { record[h] = row[idx] })
+    Logger.log(`--- Membership row ${i + 1}: ${JSON.stringify(record)} ---`)
+
+    const slots = []
+    for (let j = 1; j < redemptionsValues.length; j++) {
+      if (redemptionsValues[j][rMembershipCol] === row[0]) {
+        slots.push(`${redemptionsValues[j][rSlotCol]}:${redemptionsValues[j][rConsumedCol]}`)
+      }
+    }
+    Logger.log(`  redemptions (${slots.length}): ${slots.join(', ')}`)
+  }
+}
+
+/**
+ * Convenience wrapper, edit the two calls below to inspect any pair you
+ * find from checkForDuplicateMemberships, currently set to the two known
+ * from this session.
+ */
+function inspectKnownDuplicates() {
+  inspectMembershipsFor('A213', '81-90')
+  inspectMembershipsFor('T30', '81-90')
+}
+
+/**
+ * A precise, one time fix for the exact duplicates found by
+ * inspectKnownDuplicates this session, not a generic deduplicator. The
+ * empty Airey row (rm_m86_81-90, zero redemptions) is deleted outright,
+ * nothing is lost there. Tzovaras's situation is subtler, two physical
+ * rows share the literal id rm_m58_81-90, which is why his redemptions
+ * appeared to double, both rows point at the same twenty redemption
+ * rows. This keeps one membership row, and collapses those twenty
+ * redemption rows down to ten, one per slot, keeping a slot marked
+ * consumed if either duplicate had it true, so his three real ticks
+ * (81, 87, 88) are never lost in the cleanup.
+ *
+ * Run this once. Delete this function afterward, the same lesson from
+ * enrollRange21to30 applies here, a one time fix left lying around is a
+ * risk the next time someone runs the wrong thing from the dropdown.
+ */
+function fixKnownRange81to90Duplicates() {
+  const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
+  const redemptionsSheet = getSheet(SHEET_REDEMPTIONS)
+
+  const membershipsValues = membershipsSheet.getDataRange().getValues()
+  const idCol = membershipsValues[0].indexOf('id')
+
+  const rowsToDelete = []
+  let keptTzovarasRow = false
+  for (let i = 1; i < membershipsValues.length; i++) {
+    const id = membershipsValues[i][idCol]
+    if (id === 'rm_m86_81-90') {
+      rowsToDelete.push(i + 1)
+    }
+    if (id === 'rm_m58_81-90') {
+      if (keptTzovarasRow) {
+        rowsToDelete.push(i + 1)
+      }
+      keptTzovarasRow = true
+    }
+  }
+  rowsToDelete.sort((a, b) => b - a).forEach((rowNum) => membershipsSheet.deleteRow(rowNum))
+
+  const redemptionsValues = redemptionsSheet.getDataRange().getValues()
+  const membershipIdCol = redemptionsValues[0].indexOf('membershipId')
+  const slotCol = redemptionsValues[0].indexOf('slotNumber')
+  const consumedCol = redemptionsValues[0].indexOf('consumed')
+
+  const bestConsumedBySlot = {}
+  const rowIndexesForTarget = []
+  for (let i = 1; i < redemptionsValues.length; i++) {
+    if (redemptionsValues[i][membershipIdCol] === 'rm_m58_81-90') {
+      rowIndexesForTarget.push(i)
+      const slot = redemptionsValues[i][slotCol]
+      const consumed = Boolean(redemptionsValues[i][consumedCol])
+      bestConsumedBySlot[slot] = bestConsumedBySlot[slot] || consumed
+    }
+  }
+  rowIndexesForTarget.sort((a, b) => b - a).forEach((idx) => redemptionsSheet.deleteRow(idx + 1))
+
+  const cleanRows = Object.keys(bestConsumedBySlot)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map((slot) => ['rm_m58_81-90', slot, bestConsumedBySlot[slot]])
+  redemptionsSheet.getRange(redemptionsSheet.getLastRow() + 1, 1, cleanRows.length, 3).setValues(cleanRows)
+
+  Logger.log(`Deleted ${rowsToDelete.length} duplicate membership rows.`)
+  Logger.log(`Rebuilt ${cleanRows.length} clean redemption rows for rm_m58_81-90.`)
+}

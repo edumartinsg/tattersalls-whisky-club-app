@@ -3,7 +3,7 @@ import { buildRedemptionsForRange } from '../domain/clubRules'
 
 const DataContext = createContext(null)
 
-const EMPTY_STATE = { members: [], whiskeySlots: [], rangeMemberships: [] }
+const EMPTY_STATE = { members: [], whiskeySlots: [], rangeMemberships: [], purchaseRequests: [] }
 
 /**
  * State lives here instead of inside individual screens because the same
@@ -24,13 +24,20 @@ export function DataProvider({ repository, children }) {
    * quietly, in the background, and replaces the cached view the moment
    * it lands. Only a genuinely first ever load, with nothing cached yet,
    * has to actually wait, which is the same wait it always had.
+   *
+   * servedFromCache is only ever set true when the fresh fetch actually
+   * failed, never just because the cached copy was shown first while
+   * waiting. Setting it during that normal, brief, optimistic window was
+   * what made a completely successful sync flash a "showing saved data"
+   * warning that was never true. A definite result is returned, rather
+   * than only updating state, so a caller like the Synchronize button
+   * can react to what actually happened without reading stale state.
    */
   const reload = useCallback(async () => {
     setError(null)
     const cached = repository.getCachedState()
     if (cached) {
       setState(cached)
-      setServedFromCache(true)
       setLoading(false)
     } else {
       setLoading(true)
@@ -38,16 +45,16 @@ export function DataProvider({ repository, children }) {
 
     try {
       const freshState = await repository.loadState()
+      const gotFreshData = !freshState._servedFromCache
       setState(freshState)
-      setServedFromCache(Boolean(freshState._servedFromCache))
+      setServedFromCache(!gotFreshData)
+      return { success: gotFreshData }
     } catch (err) {
-      // A cached view is already on screen, showing an error on top of it
-      // would be worse than just leaving the stale (and clearly marked)
-      // data visible. An error only actually replaces the screen when
-      // there was nothing to fall back to in the first place.
+      setServedFromCache(true)
       if (!cached) {
         setError(err.message)
       }
+      return { success: false, message: err.message }
     } finally {
       setLoading(false)
     }
@@ -149,11 +156,10 @@ export function DataProvider({ repository, children }) {
   }, [repository, state.members])
 
   /**
-   * Enrollment covers three things at once (find or create the member,
-   * create the membership with its ten redemption rows, and send the
-   * notification email) because the backend needs all three to happen in
-   * a single request, not as three separate round trips that could
-   * partially fail.
+   * Enrollment covers two things at once, finding or creating the member
+   * and creating the membership with its ten redemption rows, in a
+   * single call so a partial record can never exist if a step in the
+   * middle were ever separated out.
    */
   const enrollMemberInRange = useCallback(async ({ name, code, rangeId, paymentMethod }) => {
     const activationDate = new Date().toISOString().slice(0, 10)
@@ -206,6 +212,42 @@ export function DataProvider({ repository, children }) {
     return result
   }, [repository, reload])
 
+  /**
+   * Releasing is what actually performs an enrollment or a renewal that
+   * a request only ever queued, so afterward the safest thing is a full
+   * reload rather than trying to optimistically guess the exact shape of
+   * what changed. The request itself is removed from view immediately
+   * though, so staff see it disappear from the pending list the moment
+   * they act on it, not only after the reload finishes.
+   */
+  const releasePurchaseRequest = useCallback(async (requestId) => {
+    setState((prev) => ({
+      ...prev,
+      purchaseRequests: prev.purchaseRequests.filter((r) => r.id !== requestId),
+    }))
+    await repository.releasePurchaseRequest({ requestId })
+    await reload()
+  }, [repository, reload])
+
+  const dismissPurchaseRequest = useCallback(async (requestId) => {
+    setState((prev) => ({
+      ...prev,
+      purchaseRequests: prev.purchaseRequests.filter((r) => r.id !== requestId),
+    }))
+    await repository.dismissPurchaseRequest({ requestId })
+  }, [repository])
+
+  /**
+   * Permanent, no optimistic guess at what changes, a full reload after
+   * this one is the honest choice, since removing a member also removes
+   * every membership and redemption they held, too much to try to patch
+   * into local state correctly by hand.
+   */
+  const hardDeleteMember = useCallback(async (memberId) => {
+    await repository.hardDeleteMember({ memberId })
+    await reload()
+  }, [repository, reload])
+
   const value = useMemo(
     () => ({
       state,
@@ -219,8 +261,11 @@ export function DataProvider({ repository, children }) {
       renameWhiskeySlot,
       enrollMemberInRange,
       updateMemberIdentity,
+      releasePurchaseRequest,
+      dismissPurchaseRequest,
+      hardDeleteMember,
     }),
-    [state, loading, error, servedFromCache, reload, toggleRedemption, renewMembership, setMemberActive, renameWhiskeySlot, enrollMemberInRange, updateMemberIdentity]
+    [state, loading, error, servedFromCache, reload, toggleRedemption, renewMembership, setMemberActive, renameWhiskeySlot, enrollMemberInRange, updateMemberIdentity, releasePurchaseRequest, dismissPurchaseRequest, hardDeleteMember]
   )
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>

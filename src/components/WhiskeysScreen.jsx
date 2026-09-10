@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
 import { useClubData } from '../context/DataContext'
+import { useToast } from '../context/ToastContext'
 import { ConfirmDialog } from './ConfirmDialog'
+import { Spinner } from './Spinner'
+import { useAsyncAction } from '../hooks/useAsyncAction'
 import { listAllRanges } from '../domain/clubRules'
 
 /**
@@ -13,11 +16,24 @@ import { listAllRanges } from '../domain/clubRules'
  */
 export function WhiskeysScreen() {
   const { state, renameWhiskeySlot } = useClubData()
+  const { showToast } = useToast()
   const [query, setQuery] = useState('')
   const [collapsedRanges, setCollapsedRanges] = useState({})
   const [editingSlot, setEditingSlot] = useState(null)
   const [draftName, setDraftName] = useState('')
   const [pendingChange, setPendingChange] = useState(null)
+
+  const [runSave, saving] = useAsyncAction(async (change) => {
+    try {
+      await renameWhiskeySlot(change.slot.number, change.newName)
+      showToast(`Slot ${change.slot.number} updated.`, 'success')
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      setPendingChange(null)
+      setEditingSlot(null)
+    }
+  })
 
   const slotsByNumber = new Map(state.whiskeySlots.map((s) => [s.number, s]))
   const ranges = listAllRanges()
@@ -114,12 +130,9 @@ export function WhiskeysScreen() {
             ? `Change slot ${pendingChange.slot.number} from "${pendingChange.slot.name || `whisky-${pendingChange.slot.number}`}" to "${pendingChange.newName || `whisky-${pendingChange.slot.number}`}"?`
             : ''
         }
-        confirmLabel="Confirm swap"
-        onConfirm={async () => {
-          await renameWhiskeySlot(pendingChange.slot.number, pendingChange.newName)
-          setPendingChange(null)
-          setEditingSlot(null)
-        }}
+        confirmLabel={saving ? <Spinner /> : 'Confirm swap'}
+        confirmDisabled={saving}
+        onConfirm={() => runSave(pendingChange)}
         onCancel={() => setPendingChange(null)}
       />
     </div>

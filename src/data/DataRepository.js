@@ -53,8 +53,8 @@ export class DataRepository {
   /**
    * Enrolling is its own operation, separate from saving a plain member
    * record, because it creates both a membership and its ten redemption
-   * rows together, and because it is the one action that triggers the
-   * notification email the club asked for.
+   * rows together in one call, never a partial record if a step in the
+   * middle were ever separated out.
    */
   async enrollMemberInRange(enrollment) {
     throw new Error('enrollMemberInRange must be implemented by the concrete repository')
@@ -64,11 +64,39 @@ export class DataRepository {
     throw new Error('saveRedemption must be implemented by the concrete repository')
   }
 
-  /**
-   * Separate from a plain field update because renewal is a payment
-   * event with its own email, not just a date being edited.
-   */
   async renewMembership(payload) {
     throw new Error('renewMembership must be implemented by the concrete repository')
+  }
+
+  /**
+   * submitPurchaseRequest is deliberately not part of this contract. It
+   * is a public, unauthenticated action the portal calls directly, never
+   * through an authenticated repository, so declaring it here would
+   * suggest the staff app can call it too, which it should not.
+   */
+
+  /**
+   * Performs whatever a pending request asked for (an enrollment or a
+   * renewal) and marks it handled. Kept separate from submitting, since
+   * only staff, inside the PIN gated app, is ever allowed to call this
+   * one, the public portal can only ever create a request, never release
+   * one.
+   */
+  async releasePurchaseRequest(payload) {
+    throw new Error('releasePurchaseRequest must be implemented by the concrete repository')
+  }
+
+  /**
+   * Permanent, no undo. Only ever reachable for a member already
+   * inactive, both here and re-checked on the backend, since a screen
+   * side check alone would not stop a stale page or a direct call from
+   * bypassing it.
+   */
+  async hardDeleteMember(payload) {
+    throw new Error('hardDeleteMember must be implemented by the concrete repository')
+  }
+
+  async dismissPurchaseRequest(payload) {
+    throw new Error('dismissPurchaseRequest must be implemented by the concrete repository')
   }
 }

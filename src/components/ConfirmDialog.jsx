@@ -4,7 +4,7 @@
  * of the browser's native confirm(), because confirm() cannot be sized
  * for a finger tap on an iPad and freezes the whole page while open.
  */
-export function ConfirmDialog({ open, title, message, confirmLabel, onConfirm, onCancel }) {
+export function ConfirmDialog({ open, title, message, confirmLabel, onConfirm, onCancel, confirmDisabled }) {
   if (!open) return null
 
   return (
@@ -22,7 +22,7 @@ export function ConfirmDialog({ open, title, message, confirmLabel, onConfirm, o
           <button className="btn btn-secondary" onClick={onCancel}>
             Cancel
           </button>
-          <button className="btn btn-danger" onClick={onConfirm}>
+          <button className="btn btn-danger" onClick={onConfirm} disabled={confirmDisabled}>
             {confirmLabel}
           </button>
         </div>

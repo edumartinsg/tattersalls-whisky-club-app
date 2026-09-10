@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
+import { Spinner } from './Spinner'
+import { useToast } from '../context/ToastContext'
 import { isMembershipComplete, isMembershipExpired, formatDateDMY, PAYMENT_METHODS } from '../domain/clubRules'
 
 /**
@@ -13,22 +15,24 @@ import { isMembershipComplete, isMembershipExpired, formatDateDMY, PAYMENT_METHO
  * frozen range by range.
  *
  * Completed and Expired stay two independent badges rather than one
- * merged status, because they answer different questions. Completed
- * means no more free pours are owed, full stop. Expired means the one
- * year member pricing window has lapsed, which only matters for whether
- * they can still buy at member price, a decision made at the bar, not in
- * this app. A member can be Completed and still well within their year,
- * in which case there is nothing to renew yet, Renew only ever appears
- * once both are true at once.
+ * merged status, they answer different questions and can both be shown
+ * at once. Completed means no more free pours are owed. Expired means
+ * the one year member pricing window has lapsed. Renewal itself is
+ * triggered by completion alone now, not by expiry, finishing a range
+ * always requires renewing before buying more from it, regardless of
+ * how much time is left on the clock.
  */
 export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onRenew, onOpenMember, showMemberName }) {
+  const { showToast } = useToast()
   const [showCompletionNotice, setShowCompletionNotice] = useState(false)
   const [pendingUncheckSlot, setPendingUncheckSlot] = useState(null)
   const [renewing, setRenewing] = useState(false)
+  const [renewSubmitting, setRenewSubmitting] = useState(false)
   const [renewPaymentMethod, setRenewPaymentMethod] = useState(PAYMENT_METHODS[0].value)
+  const [pendingToggleSlot, setPendingToggleSlot] = useState(null)
   const complete = isMembershipComplete(membership)
   const expired = isMembershipExpired(membership)
-  const canRenew = complete && expired
+  const canRenew = complete
   const [collapsed, setCollapsed] = useState(complete)
 
   const sortedRedemptions = [...membership.redemptions].sort((a, b) => a.slotNumber - b.slotNumber)
@@ -53,15 +57,35 @@ export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onR
     }
 
     const isLastRemaining = consumedCount + 1 === sortedRedemptions.length
-    onToggle(membership.id, slotNumber, true)
-    if (isLastRemaining) {
-      setShowCompletionNotice(true)
+    runToggle(slotNumber, true, isLastRemaining)
+  }
+
+  /**
+   * No toast anywhere in this file, on purpose, ticking (and unticking,
+   * and renewing) happens constantly during a shift and a message for
+   * every single one would be noise, not help. Failures are still caught
+   * rather than left as an unhandled rejection, they just fail silently,
+   * the checkbox simply stays in its previous state, which is enough
+   * signal on its own that nothing changed.
+   */
+  async function runToggle(slotNumber, nextConsumed, isLastRemaining) {
+    setPendingToggleSlot(slotNumber)
+    try {
+      await onToggle(membership.id, slotNumber, nextConsumed)
+      if (isLastRemaining) {
+        setShowCompletionNotice(true)
+      }
+    } catch {
+      // Deliberately silent, see comment above.
+    } finally {
+      setPendingToggleSlot(null)
     }
   }
 
-  function confirmUncheck() {
-    onToggle(membership.id, pendingUncheckSlot, false)
+  async function confirmUncheck() {
+    const slotNumber = pendingUncheckSlot
     setPendingUncheckSlot(null)
+    await runToggle(slotNumber, false, false)
   }
 
   /**
@@ -76,9 +100,22 @@ export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onR
     setRenewing(true)
   }
 
+  /**
+   * Renewal is not a "tick", it is a payment event with its own form,
+   * so unlike checkbox ticking it still gets a toast, matching every
+   * other modal driven action in the app.
+   */
   async function confirmRenewal() {
-    await onRenew(membership.id, renewPaymentMethod)
-    setRenewing(false)
+    setRenewSubmitting(true)
+    try {
+      await onRenew(membership.id, renewPaymentMethod)
+      showToast('Membership renewed.', 'success')
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      setRenewSubmitting(false)
+      setRenewing(false)
+    }
   }
 
   return (
@@ -125,15 +162,19 @@ export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onR
         <>
           <div className="slot-grid">
             {sortedRedemptions.map((slot) => (
-              <label key={slot.slotNumber} className={`slot-checkbox ${slot.consumed ? 'slot-checked' : ''}`}>
+              <label
+                key={slot.slotNumber}
+                className={`slot-checkbox ${slot.consumed ? 'slot-checked' : ''} ${pendingToggleSlot === slot.slotNumber ? 'slot-pending' : ''}`}
+              >
                 <input
                   type="checkbox"
                   checked={slot.consumed}
-                  disabled={complete}
+                  disabled={complete || pendingToggleSlot === slot.slotNumber}
                   onChange={(e) => handleToggle(slot.slotNumber, e.target.checked)}
                 />
                 <span className="slot-number">{slot.slotNumber}</span>
                 <span className="slot-name">{whiskeySlotsByNumber.get(slot.slotNumber)?.name || `whisky-${slot.slotNumber}`}</span>
+                {pendingToggleSlot === slot.slotNumber && <Spinner />}
               </label>
             ))}
           </div>
@@ -149,8 +190,12 @@ export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onR
                 </select>
               </label>
               <div className="form-actions">
-                <button className="btn btn-secondary btn-small" onClick={() => setRenewing(false)}>Cancel</button>
-                <button className="btn btn-primary btn-small" onClick={confirmRenewal}>Confirm renewal</button>
+                <button className="btn btn-secondary btn-small" onClick={() => setRenewing(false)} disabled={renewSubmitting}>
+                  Cancel
+                </button>
+                <button className="btn btn-primary btn-small" onClick={confirmRenewal} disabled={renewSubmitting}>
+                  {renewSubmitting ? <Spinner /> : 'Confirm renewal'}
+                </button>
               </div>
             </div>
           )}
@@ -169,7 +214,7 @@ export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onR
       <ConfirmDialog
         open={showCompletionNotice}
         title="Last free whiskey redeemed"
-        message={`This was the last free whiskey for this member in range ${membership.rangeId}. No more free redemptions are owed on this range. They can still buy whiskeys from this range at the bar as long as their membership has not expired.`}
+        message={`This was the last free whiskey for this member in range ${membership.rangeId}. No more free redemptions are owed on this range, and it is now locked. Buying more whiskeys from this range requires renewing their subscription first.`}
         confirmLabel="OK"
         onConfirm={() => setShowCompletionNotice(false)}
         onCancel={() => setShowCompletionNotice(false)}

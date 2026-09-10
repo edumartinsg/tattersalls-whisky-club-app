@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useClubData } from '../context/DataContext'
+import { useToast } from '../context/ToastContext'
 import { MembershipCard } from './MembershipCard'
 import { ConfirmDialog } from './ConfirmDialog'
+import { Spinner } from './Spinner'
+import { useAsyncAction } from '../hooks/useAsyncAction'
 import { isTemporaryId, isValidMemberCode } from '../domain/clubRules'
 
 const SORT_OPTIONS = [
@@ -27,6 +30,7 @@ function rangeStart(rangeId) {
  */
 export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
   const { state, toggleRedemption, updateMemberIdentity, renewMembership, setMemberActive } = useClubData()
+  const { showToast } = useToast()
   const [sortBy, setSortBy] = useState('range')
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -50,6 +54,40 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
         : rangeStart(a.rangeId) - rangeStart(b.rangeId)
     )
   }, [state.rangeMemberships, memberId, sortBy])
+
+  /**
+   * Defined before the "member not found" early return below, even
+   * though they only ever run after a button tap that could not exist
+   * without a member, because hooks can never follow a conditional
+   * return, only the closures inside them are allowed to assume member
+   * exists by the time they actually execute.
+   */
+  const [runSave, saving] = useAsyncAction(async (toSave) => {
+    try {
+      const result = await updateMemberIdentity(memberId, toSave.name, toSave.code)
+      setPendingSave(null)
+      setEditing(false)
+      showToast('Member updated.', 'success')
+      if (result.newId !== memberId) {
+        onIdentityChanged(result.newId)
+      }
+    } catch (err) {
+      setPendingSave(null)
+      setEditError(err.message)
+      showToast(err.message, 'error')
+    }
+  })
+
+  const [runActiveToggle, togglingActive] = useAsyncAction(async (member, makeActive) => {
+    try {
+      await setMemberActive(member.id, makeActive)
+      showToast(makeActive ? `${member.name} reactivated.` : `${member.name} removed.`, 'success')
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      setPendingActiveTarget(null)
+    }
+  })
 
   if (!member) {
     return (
@@ -80,20 +118,6 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
     setPendingSave({ name: draftName.trim(), code: draftCode.trim() })
   }
 
-  async function confirmSave() {
-    try {
-      const result = await updateMemberIdentity(member.id, pendingSave.name, pendingSave.code)
-      setPendingSave(null)
-      setEditing(false)
-      if (result.newId !== memberId) {
-        onIdentityChanged(result.newId)
-      }
-    } catch (err) {
-      setPendingSave(null)
-      setEditError(err.message)
-    }
-  }
-
   return (
     <div className="member-detail">
       <div className="member-detail-header">
@@ -122,7 +146,11 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
             </p>
             <div className="member-detail-actions">
               <button className="btn btn-secondary btn-small" onClick={startEditing}>Edit member</button>
-              <button className="btn btn-danger btn-small" onClick={() => setPendingActiveTarget(!member.active)}>
+              <button
+                className="btn btn-danger btn-small"
+                onClick={() => setPendingActiveTarget(!member.active)}
+                disabled={togglingActive}
+              >
                 {member.active ? 'Remove member' : 'Reactivate member'}
               </button>
             </div>
@@ -163,8 +191,9 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
             ? `Changing the code from ${member.id} to ${pendingSave.code} updates this member's id everywhere, including on all ${memberships.length} of their ranges. Continue?`
             : 'Save these changes?'
         }
-        confirmLabel="Save"
-        onConfirm={confirmSave}
+        confirmLabel={saving ? <Spinner /> : 'Save'}
+        confirmDisabled={saving}
+        onConfirm={() => runSave(pendingSave)}
         onCancel={() => setPendingSave(null)}
       />
 
@@ -176,11 +205,9 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
             ? `Reactivate ${member.name}? Their open balance becomes valid again.`
             : `Remove ${member.name}? Their redemption history stays saved and can be reactivated later.`
         }
-        confirmLabel={pendingActiveTarget ? 'Reactivate' : 'Remove'}
-        onConfirm={async () => {
-          await setMemberActive(member.id, pendingActiveTarget)
-          setPendingActiveTarget(null)
-        }}
+        confirmLabel={togglingActive ? <Spinner /> : pendingActiveTarget ? 'Reactivate' : 'Remove'}
+        confirmDisabled={togglingActive}
+        onConfirm={() => runActiveToggle(member, pendingActiveTarget)}
         onCancel={() => setPendingActiveTarget(null)}
       />
     </div>

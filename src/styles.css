@@ -7,6 +7,8 @@
   practical benefit, only the values themselves needed to change.
 */
 
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;700&display=swap');
+
 :root {
   --oak-950: #001f38;
   --oak-900: #003359;
@@ -29,7 +31,7 @@ body {
   margin: 0;
   background: var(--oak-950);
   color: var(--parchment);
-  font-family: 'Georgia', 'Iowan Old Style', serif;
+  font-family: 'Roboto Slab', 'Georgia', serif;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -215,6 +217,7 @@ button, input, select {
 .home-screen {
   display: flex;
   flex-direction: column;
+  flex: 1;
 }
 
 .member-detail {
@@ -499,6 +502,10 @@ button, input, select {
   min-height: 48px;
 }
 
+.slot-pending {
+  opacity: 0.6;
+}
+
 .slot-checkbox input {
   width: 22px;
   height: 22px;
@@ -641,8 +648,23 @@ button, input, select {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding-bottom: 8px;
+  padding-bottom: 10px;
   margin-bottom: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--oak-700) transparent;
+}
+
+.range-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
+.range-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.range-tabs::-webkit-scrollbar-thumb {
+  background: var(--oak-700);
+  border-radius: 999px;
 }
 
 .range-tab {
@@ -778,4 +800,449 @@ button, input, select {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Member portal, the public QR code screen */
+
+.portal-screen {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-screen h1 {
+  color: var(--amber-400);
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.portal-lookup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.portal-join-link {
+  margin-top: 16px;
+}
+
+.portal-member-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.portal-member-header h2 {
+  color: var(--amber-400);
+  margin: 0;
+}
+
+.portal-range-card {
+  background: var(--oak-800);
+  border: 1px solid var(--oak-700);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.portal-range-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+
+.portal-slot {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  cursor: default;
+}
+
+.portal-slot-status {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.portal-request-form {
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--oak-800);
+  border-radius: var(--radius);
+}
+
+.portal-request-form h3 {
+  color: var(--amber-400);
+  margin-top: 0;
+}
+
+.portal-disclaimer {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.portal-pdf-link {
+  display: block;
+  text-align: center;
+  margin-top: 24px;
+  color: var(--amber-400);
+  font-size: 0.9rem;
+}
+
+.portal-price-line {
+  font-size: 0.95rem;
+  color: var(--amber-300);
+  font-weight: 600;
+}
+
+/* Loading spinner, used inside buttons while a request is in flight */
+
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+/* Multi range select, looks like a plain closed dropdown, opens into a
+   checkbox list so more than one range can be chosen in one submission */
+
+.multi-range-select {
+  position: relative;
+}
+
+.multi-range-trigger {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--oak-700);
+  background: var(--oak-800);
+  color: var(--parchment);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.multi-range-trigger:focus {
+  outline: none;
+  border-color: #5b9bd5;
+  box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.35);
+}
+
+.multi-range-caret {
+  color: var(--amber-400);
+  font-size: 0.75rem;
+  margin-left: 8px;
+}
+
+.multi-range-dropdown {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--oak-800);
+  border: 1px solid var(--oak-700);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.multi-range-row {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--oak-700);
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.multi-range-row-checked {
+  background: var(--oak-700);
+}
+
+/* Member autocomplete, same dropdown language as the range picker */
+
+.member-autocomplete {
+  position: relative;
+}
+
+.member-autocomplete input {
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--oak-700);
+  background: var(--oak-800);
+  color: var(--parchment);
+  font-size: 1rem;
+}
+
+.member-autocomplete input:focus {
+  outline: none;
+  border-color: #5b9bd5;
+  box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.35);
+}
+
+.member-autocomplete-dropdown {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--oak-800);
+  border: 1px solid var(--oak-700);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.member-autocomplete-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 1px solid var(--oak-700);
+  background: none;
+  color: var(--parchment);
+  cursor: pointer;
+  font-size: 0.95rem;
+  text-align: left;
+}
+
+.member-autocomplete-row:last-child {
+  border-bottom: none;
+}
+
+.member-autocomplete-row:hover {
+  background: var(--oak-700);
+}
+
+.member-autocomplete-code {
+  opacity: 0.7;
+  font-size: 0.85rem;
+}
+
+.locked-range-badge {
+  display: inline-block;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  background: var(--oak-700);
+  color: var(--amber-300);
+  font-weight: 600;
+  width: fit-content;
+}
+
+.multi-range-row:last-child {
+  border-bottom: none;
+}
+
+.multi-range-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--amber-500);
+}
+
+.multi-range-empty {
+  grid-column: 1 / -1;
+  opacity: 0.7;
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* Notifications */
+
+.notification-bell {
+  position: relative;
+  background: var(--oak-700);
+  color: var(--parchment);
+  border: none;
+  border-radius: 999px;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bell-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--danger);
+  color: var(--parchment);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  min-width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.notification-card {
+  background: var(--oak-800);
+  border: 1px solid var(--oak-700);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.notification-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.notification-card-header h3 {
+  margin: 0;
+  color: var(--amber-400);
+  font-size: 1.05rem;
+}
+
+.notification-type-tag {
+  background: var(--oak-700);
+  color: var(--amber-300);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.notification-detail {
+  font-size: 0.9rem;
+  opacity: 0.85;
+  margin: 2px 0;
+}
+
+.notification-price {
+  color: var(--amber-300);
+  font-weight: 600;
+  opacity: 1;
+}
+
+.notification-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* Members admin extras */
+
+.member-admin-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.hard-delete-input {
+  width: 100%;
+  padding: 10px;
+  margin-top: 4px;
+  border-radius: var(--radius);
+  border: 1px solid var(--oak-700);
+  background: var(--oak-900);
+  color: var(--parchment);
+}
+
+.home-section-last {
+  margin-top: auto;
+  margin-bottom: 0;
+}
+
+/* Toasts, render above absolutely everything, never block interaction */
+
+.toast-stack {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(92vw, 420px);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+  color: var(--parchment);
+}
+
+.toast-message {
+  flex: 1;
+  font-size: 0.9rem;
+}
+
+.toast-success {
+  background: #2e4a30;
+  border: 1px solid var(--success);
+}
+
+.toast-error {
+  background: #4a2320;
+  border: 1px solid var(--danger);
+}
+
+.toast-syncing {
+  background: var(--oak-800);
+  border: 1px solid var(--oak-700);
+}
+
+.toast-dismiss {
+  background: none;
+  border: none;
+  color: var(--parchment);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.7;
+}
+
+.toast-dismiss:hover {
+  opacity: 1;
 }

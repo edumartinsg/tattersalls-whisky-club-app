@@ -89,6 +89,18 @@ export class LocalCacheRepository extends DataRepository {
     return this._saveWithFallback('renewMembership', payload)
   }
 
+  async releasePurchaseRequest(payload) {
+    return this._saveWithFallback('releasePurchaseRequest', payload)
+  }
+
+  async hardDeleteMember(payload) {
+    return this._saveWithFallback('hardDeleteMember', payload)
+  }
+
+  async dismissPurchaseRequest(payload) {
+    return this._saveWithFallback('dismissPurchaseRequest', payload)
+  }
+
   /**
    * Only a genuine connectivity failure gets queued for later. A browser
    * fetch() that cannot reach the network at all rejects with a

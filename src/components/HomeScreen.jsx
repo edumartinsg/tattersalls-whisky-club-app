@@ -61,12 +61,6 @@ export function HomeScreen({ onOpenMember, onOpenAddMember, onOpenRange }) {
       </section>
 
       <section className="home-section">
-        <button className="btn btn-primary btn-large" onClick={onOpenAddMember}>
-          Add member
-        </button>
-      </section>
-
-      <section className="home-section">
         <h2>Find a whiskey</h2>
         <input
           type="search"
@@ -90,6 +84,12 @@ export function HomeScreen({ onOpenMember, onOpenAddMember, onOpenRange }) {
           </ul>
         )}
         {whiskeyQuery && whiskeyResults.length === 0 && <p className="no-results">No whiskey found</p>}
+      </section>
+
+      <section className="home-section home-section-last">
+        <button className="btn btn-primary btn-large" onClick={onOpenAddMember}>
+          Add subscription
+        </button>
       </section>
     </div>
   )

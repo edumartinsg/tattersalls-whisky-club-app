@@ -3,7 +3,7 @@
  * one iPad without paying for hosting. Apps Script bound to a Google
  * Sheet is the only option that satisfies both constraints at once, since
  * the Sheet itself doubles as the human readable backup the club asked
- * for, and MailApp gives free email sending without a separate service.
+ * for.
  *
  * Every write funnels through doPost with an action name instead of using
  * separate endpoints, because a single Apps Script deployment only ever
@@ -14,26 +14,163 @@ const SHEET_MEMBERS = 'Members'
 const SHEET_MEMBERSHIPS = 'RangeMemberships'
 const SHEET_REDEMPTIONS = 'Redemptions'
 const SHEET_SLOTS = 'WhiskeySlots'
+const SHEET_REQUESTS = 'PurchaseRequests'
+const SHEET_SETTINGS = 'Settings'
 const MEMBER_CODE_PATTERN = /^[A-Za-z]{1,2}[0-9]{1,3}$/
 
-// Filled in once during setup, see README.md. Left empty here so a forgotten
-// setup step fails loudly instead of silently emailing the wrong inbox.
-const NOTIFICATION_EMAIL = 'dine@tattersallsclub.org'
+/**
+ * Staff and members both sometimes type a code in lowercase or a name
+ * in whatever case they happen to be typing in. Every code in the
+ * system so far, historical and new, is uppercase, so lookups only work
+ * reliably if new entries are forced to match that, rather than trying
+ * to make every comparison in the app case insensitive forever.
+ */
+function normalizeCode(code) {
+  return (code || '').trim().toUpperCase()
+}
+
+function normalizeName(name) {
+  return (name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
+/**
+ * Reads the club's own configurable numbers from a plain Settings sheet
+ * instead of a constant in this file, specifically so someone with no
+ * coding background can change a price by editing a spreadsheet cell,
+ * never a script.
+ */
+function getRangePrice() {
+  const sheet = getSheet(SHEET_SETTINGS)
+  const values = sheet.getDataRange().getValues()
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === 'RangePrice') {
+      return Number(values[i][1])
+    }
+  }
+  return null
+}
+const SESSION_DURATION_MS = 12 * 60 * 60 * 1000
+
+/**
+ * The real PIN and the admin secret live only in Project Settings >
+ * Script Properties, set once by hand through the Apps Script editor's
+ * own UI, never typed into a file. That is the entire point, anything
+ * written into Code.gs ends up inside the public GitHub repository and
+ * inside the JavaScript every visitor's browser downloads, a secret
+ * stored there is not a secret. PropertiesService is the one place in
+ * this whole system a value can sit that the deployed app itself never
+ * exposes.
+ */
+function requireAuth(token) {
+  if (!token) {
+    throw new Error('Not authenticated')
+  }
+  const expiry = PropertiesService.getScriptProperties().getProperty(`TOKEN_${token}`)
+  if (!expiry || Number(expiry) < Date.now()) {
+    throw new Error('Not authenticated')
+  }
+}
+
+/**
+ * A second, separate secret gates bulkSeed specifically, on top of the
+ * normal login, because that one action can overwrite the entire club
+ * roster in a single call. A staff member's everyday PIN should not be
+ * powerful enough to do that by itself, this secret is only ever meant
+ * to be typed once, into the migration scripts run from a terminal, not
+ * something that ships inside the deployed app at all.
+ */
+function requireAdminSecret(providedSecret) {
+  const realSecret = PropertiesService.getScriptProperties().getProperty('ADMIN_SECRET')
+  if (!realSecret || providedSecret !== realSecret) {
+    throw new Error('Invalid admin secret.')
+  }
+}
+
+/**
+ * Actions reachable with no login at all. Kept to the smallest possible
+ * list on purpose, login itself obviously needs to work before a token
+ * exists, and the two public portal actions are meant to be usable by
+ * anyone holding the QR code, that is the whole design of that screen,
+ * not an oversight.
+ */
+const PUBLIC_ACTIONS = ['login', 'getMemberPublicView', 'submitPurchaseRequest', 'getSettings']
+
+/**
+ * Logging in exchanges the real PIN, checked here, on the server, for a
+ * short lived random token, which is the only thing that ever gets
+ * stored in the browser afterward. If a browser or a device is ever
+ * compromised, only that temporary token leaks, never the PIN itself,
+ * and it stops being useful on its own in at most twelve hours.
+ */
+function login(payload) {
+  const properties = PropertiesService.getScriptProperties()
+  const realPin = properties.getProperty('APP_PIN')
+  if (!realPin) {
+    throw new Error('APP_PIN is not set. Add it in Project Settings > Script Properties.')
+  }
+  if (payload.pin !== realPin) {
+    throw new Error('Incorrect PIN.')
+  }
+
+  cleanupExpiredTokens(properties)
+
+  const token = Utilities.getUuid()
+  const expiresAt = Date.now() + SESSION_DURATION_MS
+  properties.setProperty(`TOKEN_${token}`, String(expiresAt))
+  return { ok: true, token: token, expiresAt: expiresAt }
+}
+
+/**
+ * Runs on every login rather than on a timer, since Apps Script has no
+ * always on process to schedule this against otherwise. Expired tokens
+ * left behind are harmless, requireAuth already rejects them, this only
+ * exists so Script Properties (capped at 500 entries total) never fills
+ * up with session tokens nobody is using anymore.
+ */
+function cleanupExpiredTokens(properties) {
+  const all = properties.getProperties()
+  const now = Date.now()
+  Object.keys(all).forEach((key) => {
+    if (key.indexOf('TOKEN_') === 0 && Number(all[key]) < now) {
+      properties.deleteProperty(key)
+    }
+  })
+}
 
 function doGet(request) {
   const action = request.parameter.action
-  if (action === 'getState') {
-    return jsonResponse(getState())
+  try {
+    if (!PUBLIC_ACTIONS.includes(action)) {
+      requireAuth(request.parameter.token)
+    }
+    if (action === 'getState') {
+      return jsonResponse(getState())
+    }
+    if (action === 'getMemberPublicView') {
+      return jsonResponse(getMemberPublicView(request.parameter.code))
+    }
+    if (action === 'getSettings') {
+      return jsonResponse({ rangePrice: getRangePrice() })
+    }
+    return jsonResponse({ error: 'Unknown action' })
+  } catch (error) {
+    return jsonResponse({ error: error.message })
   }
-  return jsonResponse({ error: 'Unknown action' })
 }
 
 function doPost(request) {
   const body = JSON.parse(request.postData.contents)
   const handlers = {
+    login: login,
     upsertMember: upsertMember,
     updateMemberIdentity: updateMemberIdentity,
     mergeMember: mergeMember,
+    hardDeleteMember: hardDeleteMember,
     bulkRenameMembers: bulkRenameMembers,
     upsertWhiskeySlot: upsertWhiskeySlot,
     enrollMemberInRange: enrollMemberInRange,
@@ -41,6 +178,9 @@ function doPost(request) {
     renewMembership: renewMembership,
     bulkSeed: bulkSeed,
     bulkUpdateWhiskeyNames: bulkUpdateWhiskeyNames,
+    submitPurchaseRequest: submitPurchaseRequest,
+    releasePurchaseRequest: releasePurchaseRequest,
+    dismissPurchaseRequest: dismissPurchaseRequest,
   }
   const handler = handlers[body.action]
   if (!handler) {
@@ -58,6 +198,12 @@ function doPost(request) {
    * reason instead of hiding it behind a wrong "will retry later".
    */
   try {
+    if (!PUBLIC_ACTIONS.includes(body.action)) {
+      requireAuth(body.token)
+    }
+    if (body.action === 'bulkSeed') {
+      requireAdminSecret(body.adminSecret)
+    }
     const result = handler(body.payload)
     return jsonResponse(result)
   } catch (error) {
@@ -145,7 +291,24 @@ function getState() {
     name: row.name || null,
   }))
 
-  return { members, whiskeySlots, rangeMemberships }
+  // Only pending requests are ever sent to the frontend, released and
+  // dismissed ones have already been acted on or removed, there is no
+  // screen that needs to see them, so there is no reason to make every
+  // load carry that extra weight.
+  const purchaseRequests = readRows(getSheet(SHEET_REQUESTS))
+    .filter((row) => row.status === 'pending')
+    .map((row) => ({
+      id: row.id,
+      type: row.type,
+      code: row.code,
+      name: row.name,
+      contactInfo: row.contactInfo || null,
+      rangeId: row.rangeId,
+      paymentMethod: row.paymentMethod,
+      requestedAt: row.requestedAt,
+    }))
+
+  return { members, whiskeySlots, rangeMemberships, purchaseRequests, rangePrice: getRangePrice() }
 }
 
 function upsertMember(member) {
@@ -174,13 +337,13 @@ function updateMemberIdentity(payload) {
   const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
 
   const currentId = payload.currentId
-  const newCode = payload.newCode
-  const newName = payload.newName
+  const isTemporaryPlaceholder = /^ID-\d+$/.test(payload.newCode || '')
+  const newCode = isTemporaryPlaceholder ? payload.newCode : normalizeCode(payload.newCode)
+  const newName = normalizeName(payload.newName)
 
   if (!newCode) {
     throw new Error('A member code is required.')
   }
-  const isTemporaryPlaceholder = /^ID-\d+$/.test(newCode)
   if (!isTemporaryPlaceholder && !MEMBER_CODE_PATTERN.test(newCode)) {
     throw new Error('Code must be 1 to 2 letters followed by up to 3 numbers, like A213 or M1.')
   }
@@ -245,6 +408,61 @@ function mergeMember(payload) {
   membersSheet.deleteRow(fromRowIndex)
 
   return { ok: true }
+}
+
+/**
+ * A real, permanent delete, unlike setMemberActive/upsertMember which
+ * only ever flips the active flag. This only makes sense for a member
+ * already inactive, checked here on the backend, not just hidden behind
+ * a UI flow, since this is the one action in the whole app with no undo
+ * at all. Every redemption and every membership they ever held is
+ * removed along with them, on purpose, a member who genuinely left the
+ * club for good is exactly the case "an unclaimed whiskey never expires"
+ * was never meant to protect against forever.
+ */
+function hardDeleteMember(payload) {
+  const membersSheet = getSheet(SHEET_MEMBERS)
+  const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
+  const redemptionsSheet = getSheet(SHEET_REDEMPTIONS)
+
+  const memberId = payload.memberId
+  const memberRowIndex = findRowIndexByValue(membersSheet, 'id', memberId)
+  if (memberRowIndex === -1) {
+    throw new Error('Member not found.')
+  }
+  const activeCol = membersSheet.getDataRange().getValues()[0].indexOf('active')
+  const isActive = membersSheet.getRange(memberRowIndex, activeCol + 1).getValue()
+  if (isActive === true || isActive === 'TRUE') {
+    throw new Error('Deactivate this member first, permanent deletion only applies to inactive members.')
+  }
+
+  const membershipsValues = membershipsSheet.getDataRange().getValues()
+  const memberIdCol = membershipsValues[0].indexOf('memberId')
+  const idCol = membershipsValues[0].indexOf('id')
+  const membershipIdsToDelete = []
+  for (let i = 1; i < membershipsValues.length; i++) {
+    if (membershipsValues[i][memberIdCol] === memberId) {
+      membershipIdsToDelete.push(membershipsValues[i][idCol])
+    }
+  }
+
+  const redemptionsValues = redemptionsSheet.getDataRange().getValues()
+  const membershipIdColR = redemptionsValues[0].indexOf('membershipId')
+  for (let i = redemptionsValues.length - 1; i >= 1; i--) {
+    if (membershipIdsToDelete.indexOf(redemptionsValues[i][membershipIdColR]) !== -1) {
+      redemptionsSheet.deleteRow(i + 1)
+    }
+  }
+
+  for (let i = membershipsValues.length - 1; i >= 1; i--) {
+    if (membershipsValues[i][memberIdCol] === memberId) {
+      membershipsSheet.deleteRow(i + 1)
+    }
+  }
+
+  membersSheet.deleteRow(memberRowIndex)
+
+  return { ok: true, deletedMemberships: membershipIdsToDelete.length }
 }
 
 /**
@@ -322,6 +540,12 @@ function upsertRedemption(redemption) {
  * inbox stays the single log of every payment event, new sign ups and
  * renewals alike, rather than splitting that record across two places.
  */
+/**
+ * Renewing resets the one year validity clock without touching what has
+ * already been redeemed, since renewal is about keeping member pricing
+ * on future pours, not about re-issuing whiskeys already given out for
+ * free.
+ */
 function renewMembership(payload) {
   const sheet = getSheet(SHEET_MEMBERSHIPS)
   const rowIndex = findRowIndexByValue(sheet, 'id', payload.membershipId)
@@ -331,31 +555,18 @@ function renewMembership(payload) {
   const headers = sheet.getDataRange().getValues()[0]
   const activationDateCol = headers.indexOf('activationDate') + 1
   const paymentMethodCol = headers.indexOf('paymentMethod') + 1
-  const rangeIdCol = headers.indexOf('rangeId') + 1
-  const memberIdCol = headers.indexOf('memberId') + 1
 
-  const row = sheet.getRange(rowIndex, 1, 1, headers.length).getValues()[0]
-  const rangeId = row[rangeIdCol - 1]
-  const memberId = row[memberIdCol - 1]
   const renewalDate = new Date().toISOString().slice(0, 10)
-
   sheet.getRange(rowIndex, activationDateCol).setValue(renewalDate)
   sheet.getRange(rowIndex, paymentMethodCol).setValue(payload.paymentMethod)
-
-  const membersSheet = getSheet(SHEET_MEMBERS)
-  const memberRowIndex = findRowIndexByValue(membersSheet, 'id', memberId)
-  const memberName = memberRowIndex === -1 ? memberId : membersSheet.getRange(memberRowIndex, 2).getValue()
-
-  sendRenewalEmail({ name: memberName, code: memberId, rangeId, paymentMethod: payload.paymentMethod, renewalDate })
 
   return { ok: true, activationDate: renewalDate }
 }
 
 /**
- * Finding or creating the member, creating the membership, writing its
- * ten redemption rows, and sending the notification email all happen in
- * one call, because the club needs a single log entry per enrollment, not
- * a partial record if the email step were ever separated from the write.
+ * Finding or creating the member, creating the membership, and writing
+ * its ten redemption rows all happen in one call, so a partial record
+ * can never exist if a step in the middle were ever separated out.
  *
  * The member's code is used directly as their id, rather than generating
  * a separate internal id, because the code is what staff already use to
@@ -367,7 +578,9 @@ function enrollMemberInRange(enrollment) {
   if (!enrollment.code) {
     throw new Error('A member code is required to enroll someone in a range.')
   }
-  if (!MEMBER_CODE_PATTERN.test(enrollment.code)) {
+  const normalizedCode = normalizeCode(enrollment.code)
+  const normalizedName = normalizeName(enrollment.name)
+  if (!MEMBER_CODE_PATTERN.test(normalizedCode)) {
     throw new Error('Code must be 1 to 2 letters followed by up to 3 numbers, like A213 or M1.')
   }
 
@@ -375,10 +588,10 @@ function enrollMemberInRange(enrollment) {
   const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
   const redemptionsSheet = getSheet(SHEET_REDEMPTIONS)
 
-  const memberId = enrollment.code
+  const memberId = normalizedCode
   const memberAlreadyExists = findRowIndexByValue(membersSheet, 'id', memberId) !== -1
   if (!memberAlreadyExists) {
-    membersSheet.appendRow([memberId, enrollment.name, true])
+    membersSheet.appendRow([memberId, normalizedName, true])
   }
 
   const membershipId = `rm_${new Date().getTime()}`
@@ -401,33 +614,7 @@ function enrollMemberInRange(enrollment) {
     redemptionsSheet.appendRow([membershipId, slotNumber, false])
   }
 
-  sendEnrollmentEmail(enrollment)
-
   return { ok: true, memberId, membershipId }
-}
-
-/**
- * A payment method of "none" means exactly that, no payment happened,
- * usually a member being re-added after being removed by mistake. The
- * notification email exists to log real payment events, sending it here
- * would create a false record of a charge that never occurred.
- */
-function sendEnrollmentEmail(enrollment) {
-  if (!NOTIFICATION_EMAIL || enrollment.paymentMethod === 'none') {
-    return
-  }
-  const subject = 'New member added to the whisky club'
-  const body = `New member: "${enrollment.name}", code: ${enrollment.code || 'no code'}, was added to range ${enrollment.rangeId}, payment made via ${enrollment.paymentMethod}, date ${enrollment.activationDate}.`
-  MailApp.sendEmail(NOTIFICATION_EMAIL, subject, body)
-}
-
-function sendRenewalEmail(renewal) {
-  if (!NOTIFICATION_EMAIL || renewal.paymentMethod === 'none') {
-    return
-  }
-  const subject = 'Whisky club membership renewed'
-  const body = `Membership renewed: "${renewal.name}", code: ${renewal.code}, range ${renewal.rangeId}, payment made via ${renewal.paymentMethod}, renewal date ${renewal.renewalDate}.`
-  MailApp.sendEmail(NOTIFICATION_EMAIL, subject, body)
 }
 
 /**
@@ -515,6 +702,8 @@ function setupSheets() {
     [SHEET_MEMBERSHIPS]: ['id', 'memberId', 'rangeId', 'activationDate', 'paymentMethod', 'locked'],
     [SHEET_REDEMPTIONS]: ['membershipId', 'slotNumber', 'consumed'],
     [SHEET_SLOTS]: ['number', 'name'],
+    [SHEET_REQUESTS]: ['id', 'type', 'code', 'name', 'contactInfo', 'rangeId', 'paymentMethod', 'status', 'requestedAt'],
+    [SHEET_SETTINGS]: ['key', 'value'],
   }
 
   for (const [name, headers] of Object.entries(definitions)) {
@@ -527,6 +716,19 @@ function setupSheets() {
 
   const membershipsSheet = spreadsheet.getSheetByName(SHEET_MEMBERSHIPS)
   membershipsSheet.getRange('C:C').setNumberFormat('@')
+
+  const requestsSheet = spreadsheet.getSheetByName(SHEET_REQUESTS)
+  requestsSheet.getRange('F:F').setNumberFormat('@')
+
+  // Seeded once with a sensible starting value, never overwritten on a
+  // re-run, so running setupSheets again later never stomps on a price
+  // someone has since changed by hand in the sheet.
+  const settingsSheet = spreadsheet.getSheetByName(SHEET_SETTINGS)
+  const settingsValues = settingsSheet.getDataRange().getValues()
+  const hasRangePrice = settingsValues.some((row) => row[0] === 'RangePrice')
+  if (!hasRangePrice) {
+    settingsSheet.appendRow(['RangePrice', 100])
+  }
 }
 
 /**
@@ -651,77 +853,156 @@ function inspectMembershipsFor(memberId, rangeId) {
 }
 
 /**
- * Convenience wrapper, edit the two calls below to inspect any pair you
- * find from checkForDuplicateMemberships, currently set to the two known
- * from this session.
+ * Powers the public, no PIN member portal reached through a QR code at
+ * the bar. Returns only what one specific member is allowed to see about
+ * themselves, their name, their ranges, and their redemption status,
+ * never the full member list or anyone else's data, since nothing sits
+ * in front of this endpoint except knowledge of one's own code, the same
+ * trust model as a hotel key card rather than a login.
  */
-function inspectKnownDuplicates() {
-  inspectMembershipsFor('A213', '81-90')
-  inspectMembershipsFor('T30', '81-90')
+function getMemberPublicView(code) {
+  if (!code) {
+    throw new Error('A member code is required.')
+  }
+  const normalizedCode = normalizeCode(code)
+  const state = getState()
+  const member = state.members.find((m) => m.id === normalizedCode)
+  if (!member) {
+    throw new Error('No member found with that code.')
+  }
+
+  const whiskeyNameBySlot = {}
+  state.whiskeySlots.forEach((s) => { whiskeyNameBySlot[s.number] = s.name })
+
+  const ranges = state.rangeMemberships
+    .filter((m) => m.memberId === normalizedCode)
+    .map((m) => ({
+      rangeId: m.rangeId,
+      activationDate: m.activationDate,
+      redemptions: m.redemptions
+        .slice()
+        .sort((a, b) => a.slotNumber - b.slotNumber)
+        .map((r) => ({
+          slotNumber: r.slotNumber,
+          whiskeyName: whiskeyNameBySlot[r.slotNumber] || `whisky-${r.slotNumber}`,
+          consumed: r.consumed,
+        })),
+    }))
+
+  return { name: member.name, active: member.active, ranges: ranges }
 }
 
 /**
- * A precise, one time fix for the exact duplicates found by
- * inspectKnownDuplicates this session, not a generic deduplicator. The
- * empty Airey row (rm_m86_81-90, zero redemptions) is deleted outright,
- * nothing is lost there. Tzovaras's situation is subtler, two physical
- * rows share the literal id rm_m58_81-90, which is why his redemptions
- * appeared to double, both rows point at the same twenty redemption
- * rows. This keeps one membership row, and collapses those twenty
- * redemption rows down to ten, one per slot, keeping a slot marked
- * consumed if either duplicate had it true, so his three real ticks
- * (81, 87, 88) are never lost in the cleanup.
- *
- * Run this once. Delete this function afterward, the same lesson from
- * enrollRange21to30 applies here, a one time fix left lying around is a
- * risk the next time someone runs the wrong thing from the dropdown.
+ * Powers "request a new range", "join us", and "renew subscription" from
+ * the public portal, all three land here as a pending row instead of
+ * writing anything to Members or RangeMemberships directly. Payment is
+ * never actually verified from a page anyone with the QR code can open,
+ * so nothing real happens until staff reviews it in the app and taps
+ * Release, which is what actually calls enrollMemberInRange or
+ * renewMembership.
  */
-function fixKnownRange81to90Duplicates() {
-  const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
-  const redemptionsSheet = getSheet(SHEET_REDEMPTIONS)
+function submitPurchaseRequest(payload) {
+  if (!payload.code) {
+    throw new Error('A member code is required.')
+  }
+  const normalizedCode = normalizeCode(payload.code)
+  const normalizedName = normalizeName(payload.name)
+  if (!MEMBER_CODE_PATTERN.test(normalizedCode)) {
+    throw new Error('Code must be 1 to 2 letters followed by up to 3 numbers, like A213 or M1.')
+  }
+  if (!normalizedName) {
+    throw new Error('A name is required.')
+  }
+  if (!payload.rangeId) {
+    throw new Error('A range is required.')
+  }
 
-  const membershipsValues = membershipsSheet.getDataRange().getValues()
-  const idCol = membershipsValues[0].indexOf('id')
+  const sheet = getSheet(SHEET_REQUESTS)
+  const id = `req_${new Date().getTime()}`
+  const newRow = sheet.getLastRow() + 1
+  // Same reasoning as everywhere else a range id is written, "1-10" can
+  // be silently reinterpreted as a date the instant it lands in a cell
+  // unless the column is already locked to plain text first.
+  sheet.getRange(newRow, 6).setNumberFormat('@')
+  sheet.getRange(newRow, 1, 1, 9).setValues([[
+    id,
+    payload.type,
+    normalizedCode,
+    normalizedName,
+    payload.contactInfo || '',
+    payload.rangeId,
+    payload.paymentMethod,
+    'pending',
+    new Date().toISOString(),
+  ]])
 
-  const rowsToDelete = []
-  let keptTzovarasRow = false
-  for (let i = 1; i < membershipsValues.length; i++) {
-    const id = membershipsValues[i][idCol]
-    if (id === 'rm_m86_81-90') {
-      rowsToDelete.push(i + 1)
-    }
-    if (id === 'rm_m58_81-90') {
-      if (keptTzovarasRow) {
-        rowsToDelete.push(i + 1)
+  return { ok: true, requestId: id }
+}
+
+/**
+ * Actually performs what a request asked for, the enrollment or the
+ * renewal, using exactly the same functions the staff app itself calls
+ * for a direct add or renew, so a released request behaves identically
+ * to staff doing it by hand. The request row is kept afterward with its
+ * status flipped, rather than deleted, so there is still a record of
+ * every request that was ever acted on, not just the ones still pending.
+ */
+function releasePurchaseRequest(payload) {
+  const sheet = getSheet(SHEET_REQUESTS)
+  const rowIndex = findRowIndexByValue(sheet, 'id', payload.requestId)
+  if (rowIndex === -1) {
+    throw new Error('Request not found.')
+  }
+  const headers = sheet.getDataRange().getValues()[0]
+  const row = sheet.getRange(rowIndex, 1, 1, headers.length).getValues()[0]
+  const request = {}
+  headers.forEach((header, index) => { request[header] = row[index] })
+
+  if (request.type === 'renewal') {
+    const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
+    const membershipValues = membershipsSheet.getDataRange().getValues()
+    const mHeaders = membershipValues[0]
+    const memberIdCol = mHeaders.indexOf('memberId')
+    const rangeIdCol = mHeaders.indexOf('rangeId')
+    const idCol = mHeaders.indexOf('id')
+    let membershipId = null
+    for (let i = 1; i < membershipValues.length; i++) {
+      if (membershipValues[i][memberIdCol] === request.code && membershipValues[i][rangeIdCol] === request.rangeId) {
+        membershipId = membershipValues[i][idCol]
+        break
       }
-      keptTzovarasRow = true
     }
-  }
-  rowsToDelete.sort((a, b) => b - a).forEach((rowNum) => membershipsSheet.deleteRow(rowNum))
-
-  const redemptionsValues = redemptionsSheet.getDataRange().getValues()
-  const membershipIdCol = redemptionsValues[0].indexOf('membershipId')
-  const slotCol = redemptionsValues[0].indexOf('slotNumber')
-  const consumedCol = redemptionsValues[0].indexOf('consumed')
-
-  const bestConsumedBySlot = {}
-  const rowIndexesForTarget = []
-  for (let i = 1; i < redemptionsValues.length; i++) {
-    if (redemptionsValues[i][membershipIdCol] === 'rm_m58_81-90') {
-      rowIndexesForTarget.push(i)
-      const slot = redemptionsValues[i][slotCol]
-      const consumed = Boolean(redemptionsValues[i][consumedCol])
-      bestConsumedBySlot[slot] = bestConsumedBySlot[slot] || consumed
+    if (!membershipId) {
+      throw new Error('Matching membership not found for this renewal request.')
     }
+    renewMembership({ membershipId: membershipId, paymentMethod: request.paymentMethod })
+  } else {
+    enrollMemberInRange({
+      code: request.code,
+      name: request.name,
+      rangeId: request.rangeId,
+      paymentMethod: request.paymentMethod,
+      activationDate: new Date().toISOString().slice(0, 10),
+    })
   }
-  rowIndexesForTarget.sort((a, b) => b - a).forEach((idx) => redemptionsSheet.deleteRow(idx + 1))
 
-  const cleanRows = Object.keys(bestConsumedBySlot)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .map((slot) => ['rm_m58_81-90', slot, bestConsumedBySlot[slot]])
-  redemptionsSheet.getRange(redemptionsSheet.getLastRow() + 1, 1, cleanRows.length, 3).setValues(cleanRows)
+  const statusCol = headers.indexOf('status') + 1
+  sheet.getRange(rowIndex, statusCol).setValue('released')
+  return { ok: true }
+}
 
-  Logger.log(`Deleted ${rowsToDelete.length} duplicate membership rows.`)
-  Logger.log(`Rebuilt ${cleanRows.length} clean redemption rows for rm_m58_81-90.`)
+/**
+ * Dismissing deletes the row outright, unlike releasing. A dismissed
+ * request was never acted on, so there is nothing about it worth
+ * keeping, and leaving rejected requests lying around would just make
+ * the pending list harder to trust at a glance.
+ */
+function dismissPurchaseRequest(payload) {
+  const sheet = getSheet(SHEET_REQUESTS)
+  const rowIndex = findRowIndexByValue(sheet, 'id', payload.requestId)
+  if (rowIndex === -1) {
+    throw new Error('Request not found.')
+  }
+  sheet.deleteRow(rowIndex)
+  return { ok: true }
 }

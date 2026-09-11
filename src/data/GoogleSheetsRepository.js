@@ -66,6 +66,10 @@ export class GoogleSheetsRepository extends DataRepository {
     return this._post('hardDeleteMember', payload)
   }
 
+  async deleteMembershipRange(payload) {
+    return this._post('deleteMembershipRange', payload)
+  }
+
   async dismissPurchaseRequest(payload) {
     return this._post('dismissPurchaseRequest', payload)
   }

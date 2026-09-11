@@ -18,7 +18,7 @@ function AvatarIcon() {
 }
 
 export function RangesScreen({ initialRangeId, onOpenAddMember, onOpenMember }) {
-  const { state, toggleRedemption, renewMembership } = useClubData()
+  const { state, toggleRedemption, renewMembership, deleteMembershipRange } = useClubData()
   const ranges = listAllRanges()
   const [activeRangeId, setActiveRangeId] = useState(initialRangeId || ranges[0].id)
   const [query, setQuery] = useState('')
@@ -98,6 +98,7 @@ export function RangesScreen({ initialRangeId, onOpenAddMember, onOpenMember }) 
           whiskeySlotsByNumber={whiskeySlotsByNumber}
           onToggle={(membershipId, slotNumber, consumed) => toggleRedemption(membershipId, slotNumber, consumed)}
           onRenew={renewMembership}
+          onDelete={deleteMembershipRange}
           onOpenMember={onOpenMember}
           showMemberName={true}
         />

@@ -1,19 +1,39 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 /**
- * Looks and behaves like the plain selects sitting next to it in the
- * same form, closed by default, opens on tap, closes on an outside tap.
- * The only real difference is what is inside once it opens, a checkbox
- * at the end of each row instead of a single choice, since a native
- * select has no way to represent picking more than one option at once.
+ * The dropdown renders through a portal straight into document.body,
+ * not as a normal child here, because a normal child is always subject
+ * to whatever stacking context its ancestors create (a transform, an
+ * overflow, anything). No z-index value fixes that from the inside, the
+ * dropdown has to physically live outside the form to guarantee it
+ * always draws above everything else, regardless of which screen this
+ * component ends up used on.
  */
 export function MultiRangeSelect({ ranges, selected, onChange }) {
   const [open, setOpen] = useState(false)
-  const containerRef = useRef(null)
+  const [position, setPosition] = useState(null)
+  const triggerRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    function updatePosition() {
+      if (!triggerRef.current) return
+      const rect = triggerRef.current.getBoundingClientRect()
+      setPosition({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+    }
+    updatePosition()
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [open])
 
   useEffect(() => {
     function handleOutsideTap(event) {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
+      if (triggerRef.current && !triggerRef.current.contains(event.target) && !event.target.closest('.multi-range-dropdown')) {
         setOpen(false)
       }
     }
@@ -41,23 +61,35 @@ export function MultiRangeSelect({ ranges, selected, onChange }) {
         : `${selected.length} ranges selected`
 
   return (
-    <div className="multi-range-select" ref={containerRef}>
-      <button type="button" className="multi-range-trigger" onClick={() => setOpen(!open)}>
+    <div className="multi-range-select">
+      <button type="button" className="multi-range-trigger" ref={triggerRef} onClick={() => setOpen(!open)}>
         <span>{summary}</span>
         <span className="multi-range-caret">{open ? '▲' : '▼'}</span>
       </button>
 
-      {open && (
-        <div className="multi-range-dropdown">
-          {ranges.length === 0 && <p className="multi-range-empty">No ranges left to select.</p>}
-          {ranges.map((r) => (
-            <label key={r.id} className={`multi-range-row ${selected.includes(r.id) ? 'multi-range-row-checked' : ''}`}>
-              <input type="checkbox" checked={selected.includes(r.id)} onChange={() => toggle(r.id)} />
-              <span>{r.id}</span>
-            </label>
-          ))}
-        </div>
-      )}
+      {open && position &&
+        createPortal(
+          <div
+            className="multi-range-dropdown"
+            style={{ top: position.top, left: position.left, width: position.width }}
+          >
+            {ranges.length === 0 && <p className="multi-range-empty">No ranges left to select.</p>}
+            {ranges.map((r) => (
+              <p key={r.id} className={`multi-range-row ${selected.includes(r.id) ? 'multi-range-row-checked' : ''}`}>
+                <input
+                  type="checkbox"
+                  id={`range-${r.id}`}
+                  checked={selected.includes(r.id)}
+                  onChange={() => toggle(r.id)}
+                />
+                <label htmlFor={`range-${r.id}`}>
+                  <span>Range {r.id}</span>
+                </label>
+              </p>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

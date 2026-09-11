@@ -97,6 +97,10 @@ export class LocalCacheRepository extends DataRepository {
     return this._saveWithFallback('hardDeleteMember', payload)
   }
 
+  async deleteMembershipRange(payload) {
+    return this._saveWithFallback('deleteMembershipRange', payload)
+  }
+
   async dismissPurchaseRequest(payload) {
     return this._saveWithFallback('dismissPurchaseRequest', payload)
   }

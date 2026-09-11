@@ -96,6 +96,14 @@ export class DataRepository {
     throw new Error('hardDeleteMember must be implemented by the concrete repository')
   }
 
+  /**
+   * Permanent, only ever valid for a fully completed range, checked
+   * again on the backend regardless of what the screen already verified.
+   */
+  async deleteMembershipRange(payload) {
+    throw new Error('deleteMembershipRange must be implemented by the concrete repository')
+  }
+
   async dismissPurchaseRequest(payload) {
     throw new Error('dismissPurchaseRequest must be implemented by the concrete repository')
   }

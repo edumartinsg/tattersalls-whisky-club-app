@@ -59,18 +59,54 @@ export function MemberPortalScreen() {
       })
   }, [])
 
+  async function fetchMember(codeToFetch) {
+    const response = await fetch(
+      `${APPS_SCRIPT_WEB_APP_URL}?action=getMemberPublicView&code=${encodeURIComponent(codeToFetch)}`
+    )
+    const result = await response.json()
+    if (result.error) throw new Error(result.error)
+    return result
+  }
+
   const [runLookup, lookingUp] = useAsyncAction(async () => {
     setError(null)
     setMember(null)
     try {
-      const response = await fetch(
-        `${APPS_SCRIPT_WEB_APP_URL}?action=getMemberPublicView&code=${encodeURIComponent(code.trim())}`
-      )
-      const result = await response.json()
-      if (result.error) throw new Error(result.error)
+      const result = await fetchMember(code.trim())
       setMember(result)
     } catch (err) {
       setError(err.message)
+    }
+  })
+
+  /**
+   * This screen is the kind of thing someone opens once and leaves
+   * sitting on their phone for weeks, not something they reopen through
+   * the QR code every visit. Refetching whenever the tab becomes visible
+   * again (unlocking the phone, switching back to it) means a staff
+   * member releasing a request shows up here without the member having
+   * to do anything, silently, no loading state, so an old page never
+   * quietly keeps showing stale ticks and a stale Completed badge.
+   */
+  useEffect(() => {
+    if (!member) return
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        fetchMember(code.trim()).then(setMember).catch(() => {})
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [member, code])
+
+  const [runManualRefresh, refreshing] = useAsyncAction(async () => {
+    try {
+      const result = await fetchMember(code.trim())
+      setMember(result)
+    } catch {
+      // A manual refresh failing quietly leaves the last known good view
+      // on screen, which is more useful here than clearing it and
+      // showing an error over a page someone might be about to order at.
     }
   })
 
@@ -94,7 +130,16 @@ export function MemberPortalScreen() {
         </form>
       )}
 
-      {member && <MemberPublicView member={member} code={code.trim()} rangePrice={rangePrice} onBack={() => setMember(null)} />}
+      {member && (
+        <MemberPublicView
+          member={member}
+          code={code.trim()}
+          rangePrice={rangePrice}
+          onBack={() => setMember(null)}
+          onRefresh={runManualRefresh}
+          refreshing={refreshing}
+        />
+      )}
 
       {!member && !showJoinForm && (
         <button className="btn btn-secondary portal-join-link" onClick={() => setShowJoinForm(true)}>
@@ -113,7 +158,7 @@ export function MemberPortalScreen() {
   )
 }
 
-function MemberPublicView({ member, code, rangePrice, onBack }) {
+function MemberPublicView({ member, code, rangePrice, onBack, onRefresh, refreshing }) {
   const [activeRequest, setActiveRequest] = useState(null) // { mode, rangeId } | null
 
   const ownedRangeIds = member.ranges.map((r) => r.rangeId)
@@ -122,7 +167,12 @@ function MemberPublicView({ member, code, rangePrice, onBack }) {
     <div className="portal-member-view">
       <div className="portal-member-header">
         <h2>{member.name}</h2>
-        <button className="btn btn-secondary btn-small" onClick={onBack}>Not you?</button>
+        <div className="portal-member-header-actions">
+          <button className="btn btn-secondary btn-small" onClick={onRefresh} disabled={refreshing}>
+            {refreshing ? <Spinner /> : 'Refresh'}
+          </button>
+          <button className="btn btn-secondary btn-small" onClick={onBack}>Not you?</button>
+        </div>
       </div>
 
       {member.ranges.length === 0 && <p className="all-clear">No ranges on file yet.</p>}

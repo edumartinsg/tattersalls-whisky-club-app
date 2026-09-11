@@ -181,6 +181,7 @@ function doPost(request) {
     submitPurchaseRequest: submitPurchaseRequest,
     releasePurchaseRequest: releasePurchaseRequest,
     dismissPurchaseRequest: dismissPurchaseRequest,
+    deleteMembershipRange: deleteMembershipRange,
   }
   const handler = handlers[body.action]
   if (!handler) {
@@ -546,6 +547,16 @@ function upsertRedemption(redemption) {
  * on future pours, not about re-issuing whiskeys already given out for
  * free.
  */
+/**
+ * Renewing used to only reset the date, back when a completed range
+ * could still be bought from at member pricing without renewing, an
+ * unresolved redemption meant something real, resetting it would have
+ * erased a whiskey someone was still owed. That stopped being true once
+ * completing a range started requiring renewal before buying more from
+ * it, once every slot is redeemed, renewing is the only way to get a
+ * fresh ten, so it has to actually clear them, otherwise the payment
+ * changes nothing at all, which is the exact bug this replaces.
+ */
 function renewMembership(payload) {
   const sheet = getSheet(SHEET_MEMBERSHIPS)
   const rowIndex = findRowIndexByValue(sheet, 'id', payload.membershipId)
@@ -559,6 +570,16 @@ function renewMembership(payload) {
   const renewalDate = new Date().toISOString().slice(0, 10)
   sheet.getRange(rowIndex, activationDateCol).setValue(renewalDate)
   sheet.getRange(rowIndex, paymentMethodCol).setValue(payload.paymentMethod)
+
+  const redemptionsSheet = getSheet(SHEET_REDEMPTIONS)
+  const redemptionsValues = redemptionsSheet.getDataRange().getValues()
+  const membershipIdCol = redemptionsValues[0].indexOf('membershipId')
+  const consumedCol = redemptionsValues[0].indexOf('consumed') + 1
+  for (let i = 1; i < redemptionsValues.length; i++) {
+    if (redemptionsValues[i][membershipIdCol] === payload.membershipId) {
+      redemptionsSheet.getRange(i + 1, consumedCol).setValue(false)
+    }
+  }
 
   return { ok: true, activationDate: renewalDate }
 }
@@ -1004,5 +1025,49 @@ function dismissPurchaseRequest(payload) {
     throw new Error('Request not found.')
   }
   sheet.deleteRow(rowIndex)
+  return { ok: true }
+}
+
+/**
+ * Permanent, no undo, unlike archiving (which was designed to move a
+ * range's data out of the way while keeping the payment record intact).
+ * This is the opposite, the payment record itself is gone afterward.
+ * Only allowed when every slot is already consumed, checked here on the
+ * backend, not just hidden behind a UI condition, since a stale screen
+ * or a direct call could otherwise delete a range someone still has
+ * whiskeys owed on.
+ */
+function deleteMembershipRange(payload) {
+  const membershipsSheet = getSheet(SHEET_MEMBERSHIPS)
+  const redemptionsSheet = getSheet(SHEET_REDEMPTIONS)
+
+  const rowIndex = findRowIndexByValue(membershipsSheet, 'id', payload.membershipId)
+  if (rowIndex === -1) {
+    throw new Error('Membership not found.')
+  }
+
+  const redemptionsValues = redemptionsSheet.getDataRange().getValues()
+  const membershipIdCol = redemptionsValues[0].indexOf('membershipId')
+  const consumedCol = redemptionsValues[0].indexOf('consumed')
+
+  const rowsToDelete = []
+  let allConsumed = true
+  for (let i = 1; i < redemptionsValues.length; i++) {
+    if (redemptionsValues[i][membershipIdCol] === payload.membershipId) {
+      rowsToDelete.push(i + 1)
+      const consumed = redemptionsValues[i][consumedCol]
+      if (!(consumed === true || consumed === 'TRUE')) {
+        allConsumed = false
+      }
+    }
+  }
+
+  if (rowsToDelete.length === 0 || !allConsumed) {
+    throw new Error('Only a fully completed range can be deleted.')
+  }
+
+  rowsToDelete.sort((a, b) => b - a).forEach((rowNum) => redemptionsSheet.deleteRow(rowNum))
+  membershipsSheet.deleteRow(rowIndex)
+
   return { ok: true }
 }

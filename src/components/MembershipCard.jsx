@@ -22,7 +22,7 @@ import { isMembershipComplete, isMembershipExpired, formatDateDMY, PAYMENT_METHO
  * always requires renewing before buying more from it, regardless of
  * how much time is left on the clock.
  */
-export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onRenew, onOpenMember, showMemberName }) {
+export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onRenew, onDelete, onOpenMember, showMemberName }) {
   const { showToast } = useToast()
   const [showCompletionNotice, setShowCompletionNotice] = useState(false)
   const [pendingUncheckSlot, setPendingUncheckSlot] = useState(null)
@@ -30,6 +30,8 @@ export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onR
   const [renewSubmitting, setRenewSubmitting] = useState(false)
   const [renewPaymentMethod, setRenewPaymentMethod] = useState(PAYMENT_METHODS[0].value)
   const [pendingToggleSlot, setPendingToggleSlot] = useState(null)
+  const [pendingDelete, setPendingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const complete = isMembershipComplete(membership)
   const expired = isMembershipExpired(membership)
   const canRenew = complete
@@ -118,6 +120,25 @@ export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onR
     }
   }
 
+  /**
+   * Only ever offered once complete, same condition as Renew, since
+   * deleting a range that still owes whiskeys would throw away a debt
+   * the club still has to the member, not just a record. The backend
+   * enforces this too, this is a convenience, not the actual safeguard.
+   */
+  async function confirmDelete() {
+    setDeleting(true)
+    try {
+      await onDelete(membership.id)
+      showToast('Range deleted.', 'success')
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      setDeleting(false)
+      setPendingDelete(false)
+    }
+  }
+
   return (
     <div className={`membership-card ${complete ? 'membership-card-complete' : ''}`}>
       <div
@@ -152,6 +173,17 @@ export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onR
           {canRenew && (
             <button className="btn btn-primary btn-small" onClick={startRenewing}>
               Renew subscription
+            </button>
+          )}
+          {complete && onDelete && (
+            <button
+              className="btn btn-danger btn-small"
+              onClick={(e) => {
+                e.stopPropagation()
+                setPendingDelete(true)
+              }}
+            >
+              Delete range
             </button>
           )}
           <span className="collapse-caret">{collapsed ? '+' : '-'}</span>
@@ -218,6 +250,16 @@ export function MembershipCard({ membership, whiskeySlotsByNumber, onToggle, onR
         confirmLabel="OK"
         onConfirm={() => setShowCompletionNotice(false)}
         onCancel={() => setShowCompletionNotice(false)}
+      />
+
+      <ConfirmDialog
+        open={pendingDelete}
+        title="Delete range"
+        message="The range will be permanently deleted, do you want to continue?"
+        confirmLabel={deleting ? <Spinner /> : 'Delete'}
+        confirmDisabled={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(false)}
       />
     </div>
   )

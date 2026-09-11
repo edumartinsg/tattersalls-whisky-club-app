@@ -29,7 +29,7 @@ function rangeStart(rangeId) {
  * save.
  */
 export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
-  const { state, toggleRedemption, updateMemberIdentity, renewMembership, setMemberActive } = useClubData()
+  const { state, toggleRedemption, updateMemberIdentity, renewMembership, setMemberActive, deleteMembershipRange } = useClubData()
   const { showToast } = useToast()
   const [sortBy, setSortBy] = useState('range')
   const [editing, setEditing] = useState(false)
@@ -179,6 +179,7 @@ export function MemberDetailScreen({ memberId, onBack, onIdentityChanged }) {
           whiskeySlotsByNumber={whiskeySlotsByNumber}
           onToggle={(membershipId, slotNumber, consumed) => toggleRedemption(membershipId, slotNumber, consumed)}
           onRenew={renewMembership}
+          onDelete={deleteMembershipRange}
           showMemberName={false}
         />
       ))}

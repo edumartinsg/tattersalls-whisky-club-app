@@ -248,6 +248,17 @@ export function DataProvider({ repository, children }) {
     await reload()
   }, [repository, reload])
 
+  /**
+   * Same reasoning as hardDeleteMember, permanent and structural enough
+   * that a full reload afterward is simpler and safer than trying to
+   * patch the membership and its ten redemptions out of local state by
+   * hand.
+   */
+  const deleteMembershipRange = useCallback(async (membershipId) => {
+    await repository.deleteMembershipRange({ membershipId })
+    await reload()
+  }, [repository, reload])
+
   const value = useMemo(
     () => ({
       state,
@@ -264,8 +275,9 @@ export function DataProvider({ repository, children }) {
       releasePurchaseRequest,
       dismissPurchaseRequest,
       hardDeleteMember,
+      deleteMembershipRange,
     }),
-    [state, loading, error, servedFromCache, reload, toggleRedemption, renewMembership, setMemberActive, renameWhiskeySlot, enrollMemberInRange, updateMemberIdentity, releasePurchaseRequest, dismissPurchaseRequest, hardDeleteMember]
+    [state, loading, error, servedFromCache, reload, toggleRedemption, renewMembership, setMemberActive, renameWhiskeySlot, enrollMemberInRange, updateMemberIdentity, releasePurchaseRequest, dismissPurchaseRequest, hardDeleteMember, deleteMembershipRange]
   )
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>

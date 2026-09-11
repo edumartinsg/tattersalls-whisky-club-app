@@ -836,6 +836,11 @@ button, input, select {
   margin-bottom: 16px;
 }
 
+.portal-member-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .portal-member-header h2 {
   color: var(--amber-400);
   margin: 0;
@@ -945,12 +950,6 @@ button, input, select {
   cursor: pointer;
 }
 
-.multi-range-trigger:focus {
-  outline: none;
-  border-color: #5b9bd5;
-  box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.35);
-}
-
 .multi-range-caret {
   color: var(--amber-400);
   font-size: 0.75rem;
@@ -958,17 +957,14 @@ button, input, select {
 }
 
 .multi-range-dropdown {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  position: fixed;
+  z-index: 9999;
   max-height: 240px;
   overflow-y: auto;
   background: var(--oak-800);
   border: 1px solid var(--oak-700);
   border-radius: var(--radius);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
 }
 
 .multi-range-row {
@@ -976,10 +972,15 @@ button, input, select {
   justify-content: flex-start;
   align-items: center;
   gap: 10px;
+  margin: 0;
   padding: 10px 14px;
   border-bottom: 1px solid var(--oak-700);
   cursor: pointer;
   font-size: 0.95rem;
+}
+
+.multi-range-row label {
+  cursor: pointer;
 }
 
 .multi-range-row-checked {
@@ -1009,17 +1010,14 @@ button, input, select {
 }
 
 .member-autocomplete-dropdown {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  position: fixed;
+  z-index: 9999;
   max-height: 240px;
   overflow-y: auto;
   background: var(--oak-800);
   border: 1px solid var(--oak-700);
   border-radius: var(--radius);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
 }
 
 .member-autocomplete-row {
